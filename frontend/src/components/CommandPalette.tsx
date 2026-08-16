@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { buildCommands, commandText, type Command } from '../commands'
-import { rank } from '../fuzzy'
+import { buildCommands, type Command } from '../commands'
+import { rankCandidates } from '../fuzzy'
 import { useStore } from '../store'
 
 /**
@@ -19,10 +19,10 @@ export function CommandPalette() {
   // a background refresh lands mid-typing.
   const commands = useMemo(() => (open ? buildCommands(useStore.getState()) : []), [open])
 
-  const results = useMemo(() => {
-    const scored = rank(query, commands, commandText)
-    return scored.slice(0, 200)
-  }, [query, commands])
+  const results = useMemo(
+    () => rankCandidates(query, commands, (c) => c.candidate).slice(0, 200),
+    [query, commands],
+  )
 
   useEffect(() => {
     if (open) {
@@ -111,7 +111,7 @@ export function CommandPalette() {
           placeholder="Type a table name or a command…"
           spellCheck={false}
           aria-label="Command"
-          className="w-full border-b border-[var(--color-border)] bg-transparent px-4 py-3.5 text-[15px] outline-none placeholder:text-[var(--color-faint)]"
+          className="w-full border-b border-[var(--color-border)] bg-transparent px-4 py-3.5 text-[0.9375rem] outline-none placeholder:text-[var(--color-faint)]"
         />
 
         <div ref={listRef} className="max-h-[52vh] overflow-y-auto py-1">
@@ -125,7 +125,7 @@ export function CommandPalette() {
             return (
               <div key={item.id}>
                 {item.group !== prevGroup && (
-                  <div className="px-4 pt-2.5 pb-1 text-[10px] font-semibold tracking-wider text-[var(--color-faint)] uppercase">
+                  <div className="px-4 pt-2.5 pb-1 text-[0.625rem] font-semibold tracking-wider text-[var(--color-faint)] uppercase">
                     {item.group}
                   </div>
                 )}
@@ -142,13 +142,13 @@ export function CommandPalette() {
                       <Highlighted text={item.title} positions={match.positions} />
                     </span>
                     {item.subtitle && (
-                      <span className="block truncate text-[11px] text-[var(--color-muted)]">
+                      <span className="block truncate text-[0.6875rem] text-[var(--color-muted)]">
                         {item.subtitle}
                       </span>
                     )}
                   </span>
                   {item.shortcut && (
-                    <kbd className="shrink-0 rounded border border-[var(--color-border-strong)] px-1.5 py-0.5 font-[var(--font-mono)] text-[10px] text-[var(--color-muted)]">
+                    <kbd className="shrink-0 rounded border border-[var(--color-border-strong)] px-1.5 py-0.5 font-[var(--font-mono)] text-[0.625rem] text-[var(--color-muted)]">
                       {item.shortcut}
                     </kbd>
                   )}

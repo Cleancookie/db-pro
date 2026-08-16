@@ -29,12 +29,18 @@ body,
   height: 100%;
 }
 
+/* The root size is the single knob that scales the interface. Settings
+   writes it inline on <html>; this is the fallback before that loads. */
+html {
+  font-size: 16px;
+}
+
 body {
   margin: 0;
   background: var(--color-bg);
   color: var(--color-text);
   font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
-  font-size: 13px;
+  font-size: 1rem;
   /* The webview is a fixed app frame, not a document — page-level scrolling
      would detach the header from the grid. */
   overflow: hidden;

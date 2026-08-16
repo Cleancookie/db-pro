@@ -7,8 +7,9 @@
  * only when connected.
  */
 
+import { schemaBias, type Candidate } from './fuzzy'
 import { PAGE_SIZES, type useStore } from './store'
-import type { ObjectType } from './types'
+import type { ObjectType, SchemaObject } from './types'
 
 type Store = ReturnType<typeof useStore.getState>
 
@@ -17,9 +18,9 @@ export interface Command {
   title: string
   subtitle?: string
   group: string
-  /** Extra text folded into the fuzzy search but not displayed. */
-  keywords?: string
   shortcut?: string
+  /** How this entry is matched and ranked. */
+  candidate: Candidate
   run: () => void | Promise<void>
 }
 
@@ -30,20 +31,48 @@ export const OBJECT_ICON: Record<ObjectType, string> = {
   procedure: '⚙',
 }
 
+/**
+ * Tables are what people navigate to; routines are usually noise in a
+ * name search. This only breaks ties inside a match tier — it can never push
+ * a function above a table that matched more strongly.
+ */
+function typeBias(t: ObjectType): number {
+  switch (t) {
+    case 'table':
+      return 0
+    case 'view':
+      return -50
+    default:
+      return -600
+  }
+}
+
+export function objectCandidate(o: SchemaObject): Candidate {
+  return {
+    name: o.name,
+    qualifier: o.schema || undefined,
+    keywords: o.type,
+    bias: schemaBias(o.schema) + typeBias(o.type),
+  }
+}
+
+export function qualifiedName(o: { schema: string; name: string }): string {
+  return o.schema ? `${o.schema}.${o.name}` : o.name
+}
+
 export function buildCommands(s: Store): Command[] {
   const cmds: Command[] = []
 
   // Objects first: navigating to a table is by far the most common reason to
-  // open the palette, so those entries should win ties against everything else.
+  // open the palette, so those entries lead when nothing has been typed.
   if (s.activeConnectionId) {
     for (const o of s.objects) {
-      const qualified = o.schema ? `${o.schema}.${o.name}` : o.name
       cmds.push({
-        id: `object:${qualified}:${o.type}`,
-        title: qualified,
+        id: `object:${qualifiedName(o)}:${o.type}`,
+        title: qualifiedName(o),
         subtitle: o.type + (o.rowEstimate != null ? ` · ~${formatCount(o.rowEstimate)} rows` : ''),
         group: 'Open',
-        keywords: `${o.type} ${o.name}`,
+        candidate: objectCandidate(o),
         run: () => s.openObject(o),
       })
     }
@@ -56,7 +85,10 @@ export function buildCommands(s: Store): Command[] {
       title: connected ? `Switch to ${c.name}` : `Connect to ${c.name}`,
       subtitle: describeConnection(c.kind, c.host, c.file),
       group: 'Connections',
-      keywords: `connection ${c.kind} ${c.host ?? ''} ${c.file ?? ''}`,
+      candidate: {
+        name: c.name,
+        keywords: `connect connection ${c.kind} ${c.host ?? ''} ${c.file ?? ''}`,
+      },
       run: () => s.connect(c.id),
     })
   }
@@ -65,7 +97,10 @@ export function buildCommands(s: Store): Command[] {
     id: 'connection:new',
     title: 'New connection…',
     group: 'Connections',
-    keywords: 'add create database server mysql postgres mssql sqlite',
+    candidate: {
+      name: 'New connection',
+      keywords: 'add create database server mysql postgres mssql sqlite',
+    },
     run: () => s.setDialog({ kind: 'connection', connection: null }),
   })
 
@@ -76,12 +111,14 @@ export function buildCommands(s: Store): Command[] {
         id: 'connection:edit',
         title: `Edit connection “${active.name}”`,
         group: 'Connections',
+        candidate: { name: `Edit ${active.name}`, keywords: 'connection settings modify' },
         run: () => s.setDialog({ kind: 'connection', connection: active }),
       })
       cmds.push({
         id: 'connection:disconnect',
         title: `Disconnect from ${active.name}`,
         group: 'Connections',
+        candidate: { name: `Disconnect ${active.name}`, keywords: 'close drop' },
         run: () => s.disconnect(active.id),
       })
     }
@@ -94,7 +131,7 @@ export function buildCommands(s: Store): Command[] {
         id: `database:${db}`,
         title: `Use database ${db}`,
         group: 'Databases',
-        keywords: 'switch schema catalog',
+        candidate: { name: db, keywords: 'use database switch catalog', bias: -200 },
         run: () => s.selectDatabase(db),
       })
     }
@@ -102,11 +139,21 @@ export function buildCommands(s: Store): Command[] {
 
   cmds.push({
     id: 'sql:toggle',
-    title: s.sqlOpen ? 'Close SQL editor' : 'Open SQL editor',
+    title: s.view === 'sql' ? 'Close SQL editor' : 'Open SQL editor',
     group: 'Query',
     shortcut: 'Ctrl+E',
-    keywords: 'query editor write execute',
-    run: () => s.setSqlOpen(!s.sqlOpen),
+    candidate: { name: 'SQL editor', keywords: 'query write execute run' },
+    run: () => s.setView(s.view === 'sql' ? 'data' : 'sql'),
+  })
+
+  cmds.push({
+    id: 'view:activity',
+    title: 'Show running queries',
+    subtitle: 'Open connections and in-flight queries, with cancel',
+    group: 'Query',
+    shortcut: 'Ctrl+Shift+A',
+    candidate: { name: 'Running queries', keywords: 'activity monitor cancel kill sessions processes' },
+    run: () => s.setView('activity'),
   })
 
   if (s.activeRef) {
@@ -115,7 +162,7 @@ export function buildCommands(s: Store): Command[] {
       title: 'Refresh rows',
       group: 'Query',
       shortcut: 'Ctrl+R',
-      keywords: 'reload requery',
+      candidate: { name: 'Refresh rows', keywords: 'reload requery' },
       run: () => s.reload(),
     })
     cmds.push({
@@ -123,7 +170,7 @@ export function buildCommands(s: Store): Command[] {
       title: 'Filter rows (SQL after WHERE)',
       group: 'Query',
       shortcut: 'Ctrl+F',
-      keywords: 'where search find condition',
+      candidate: { name: 'Filter rows', keywords: 'where search find condition' },
       run: () => focusFilter(),
     })
     if (s.filter) {
@@ -131,6 +178,7 @@ export function buildCommands(s: Store): Command[] {
         id: 'data:clear-filter',
         title: 'Clear filter',
         group: 'Query',
+        candidate: { name: 'Clear filter', keywords: 'reset where' },
         run: () => s.applyFilter(''),
       })
     }
@@ -139,19 +187,19 @@ export function buildCommands(s: Store): Command[] {
         id: 'data:clear-sort',
         title: 'Clear sort',
         group: 'Query',
+        candidate: { name: 'Clear sort', keywords: 'reset order by' },
         run: () => s.clearSort(),
       })
     }
 
-    // Pagination
     cmds.push({
       id: 'page:toggle',
       title: s.paginationEnabled ? 'Turn pagination off' : 'Turn pagination on',
       subtitle: s.paginationEnabled
-        ? 'Load every matching row, up to the 100k safety cap'
+        ? 'Load every matching row, up to the safety cap'
         : `Back to pages of ${s.pageSize}`,
       group: 'Pagination',
-      keywords: 'paging limit all rows',
+      candidate: { name: 'Pagination', keywords: 'paging limit all rows off on' },
       run: () => s.setPaginationEnabled(!s.paginationEnabled),
     })
     if (s.paginationEnabled) {
@@ -161,7 +209,7 @@ export function buildCommands(s: Store): Command[] {
           id: `page:size:${n}`,
           title: `Page size: ${n}`,
           group: 'Pagination',
-          keywords: 'rows per page limit',
+          candidate: { name: `Page size ${n}`, keywords: 'rows per page limit', bias: -300 },
           run: () => s.setPageSize(n),
         })
       }
@@ -171,12 +219,14 @@ export function buildCommands(s: Store): Command[] {
           title: 'Previous page',
           group: 'Pagination',
           shortcut: 'Ctrl+←',
+          candidate: { name: 'Previous page', keywords: 'back' },
           run: () => s.setPage(s.page - 1),
         })
         cmds.push({
           id: 'page:first',
           title: 'First page',
           group: 'Pagination',
+          candidate: { name: 'First page', keywords: 'start beginning' },
           run: () => s.setPage(1),
         })
       }
@@ -186,6 +236,7 @@ export function buildCommands(s: Store): Command[] {
           title: 'Next page',
           group: 'Pagination',
           shortcut: 'Ctrl+→',
+          candidate: { name: 'Next page', keywords: 'forward' },
           run: () => s.setPage(s.page + 1),
         })
       }
@@ -193,10 +244,19 @@ export function buildCommands(s: Store): Command[] {
   }
 
   cmds.push({
+    id: 'app:settings',
+    title: 'Settings',
+    group: 'App',
+    shortcut: 'Ctrl+,',
+    candidate: { name: 'Settings', keywords: 'preferences options config font size' },
+    run: () => s.setDialog({ kind: 'settings' }),
+  })
+
+  cmds.push({
     id: 'help:shortcuts',
     title: 'Keyboard shortcuts',
-    group: 'Help',
-    keywords: 'keys bindings help',
+    group: 'App',
+    candidate: { name: 'Keyboard shortcuts', keywords: 'keys bindings help' },
     run: () => s.setDialog({ kind: 'shortcuts' }),
   })
 
@@ -230,7 +290,9 @@ export function formatCount(n: number): string {
   return `${(n / 1_000_000).toFixed(1)}m`
 }
 
-/** Searchable text for a command: what is shown, plus hidden keywords. */
-export function commandText(c: Command): string {
-  return `${c.title} ${c.subtitle ?? ''} ${c.keywords ?? ''}`
+export function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`
+  const mins = Math.floor(ms / 60_000)
+  return `${mins}m ${Math.round((ms % 60_000) / 1000)}s`
 }

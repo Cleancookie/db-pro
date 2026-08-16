@@ -15,7 +15,7 @@ export function SqlEditor() {
   const runSql = useStore((s) => s.runSql)
   const sqlResult = useStore((s) => s.sqlResult)
   const busy = useStore((s) => s.busy)
-  const setSqlOpen = useStore((s) => s.setSqlOpen)
+  const setView = useStore((s) => s.setView)
   const ref = useRef<HTMLTextAreaElement>(null)
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -39,18 +39,18 @@ export function SqlEditor() {
   return (
     <div className="flex h-full flex-col">
       <div className="chrome flex items-center gap-2 border-b border-[var(--color-border)] bg-[var(--color-panel)] px-3 py-1.5">
-        <span className="text-[10px] font-semibold tracking-wider text-[var(--color-faint)] uppercase">
+        <span className="text-[0.625rem] font-semibold tracking-wider text-[var(--color-faint)] uppercase">
           SQL
         </span>
         <button
           onClick={() => void runSql()}
           disabled={busy || !sqlText.trim()}
-          className="rounded border border-[var(--color-border-strong)] bg-[var(--color-elevated)] px-2 py-0.5 text-[11px] disabled:opacity-40 enabled:hover:border-[var(--color-accent)]"
+          className="rounded border border-[var(--color-border-strong)] bg-[var(--color-elevated)] px-2 py-0.5 text-[0.6875rem] disabled:opacity-40 enabled:hover:border-[var(--color-accent)]"
         >
           Run <span className="text-[var(--color-faint)]">Ctrl+Enter</span>
         </button>
         <button
-          onClick={() => setSqlOpen(false)}
+          onClick={() => setView('data')}
           className="ml-auto rounded px-1.5 text-[var(--color-muted)] hover:bg-[var(--color-elevated)] hover:text-[var(--color-text)]"
           title="Close editor (Ctrl+E)"
         >
@@ -67,7 +67,7 @@ export function SqlEditor() {
         spellCheck={false}
         placeholder="select * from …"
         aria-label="SQL editor"
-        className="h-40 w-full shrink-0 resize-y border-b border-[var(--color-border)] bg-[var(--color-bg)] p-3 font-[var(--font-mono)] text-[12.5px] leading-relaxed outline-none placeholder:text-[var(--color-faint)]"
+        className="h-40 w-full shrink-0 resize-y border-b border-[var(--color-border)] bg-[var(--color-bg)] p-3 font-[var(--font-mono)] text-[0.78rem] leading-relaxed outline-none placeholder:text-[var(--color-faint)]"
       />
 
       <div className="min-h-0 flex-1">

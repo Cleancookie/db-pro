@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alexlaw/db-pro/internal/activity"
 	"github.com/alexlaw/db-pro/internal/config"
 	"github.com/alexlaw/db-pro/internal/driver"
 	"github.com/alexlaw/db-pro/internal/engine"
@@ -19,15 +20,64 @@ const testConnectionTimeout = 20 * time.Second
 
 // Service is the API. One instance per running app.
 type Service struct {
-	store  *config.Store
-	engine *engine.Engine
+	store    *config.Store
+	settings *config.SettingsStore
+	engine   *engine.Engine
+	activity *activity.Registry
 }
 
-func New(store *config.Store, eng *engine.Engine) *Service {
-	return &Service{store: store, engine: eng}
+func New(store *config.Store, settings *config.SettingsStore, eng *engine.Engine, act *activity.Registry) *Service {
+	return &Service{store: store, settings: settings, engine: eng, activity: act}
 }
 
 func (s *Service) Shutdown() { s.engine.Shutdown() }
+
+// --- settings ----------------------------------------------------------------------
+
+func (s *Service) GetSettings() config.Settings { return s.settings.Get() }
+
+func (s *Service) SaveSettings(v config.Settings) (config.Settings, error) {
+	return s.settings.Set(v)
+}
+
+// --- activity ----------------------------------------------------------------------
+
+// SessionInfo is one live connection to one database.
+type SessionInfo struct {
+	ConnectionID string `json:"connectionId"`
+	Database     string `json:"database"`
+	OpenConns    int    `json:"openConns"`
+	InUse        int    `json:"inUse"`
+	Idle         int    `json:"idle"`
+}
+
+// ActivityResult is everything the activity page shows: what the app has open
+// and what it is currently running.
+type ActivityResult struct {
+	Queries  []activity.Info `json:"queries"`
+	Sessions []SessionInfo   `json:"sessions"`
+}
+
+func (s *Service) Activity() ActivityResult {
+	sessions := s.engine.Sessions()
+	out := ActivityResult{
+		Queries:  s.activity.List(),
+		Sessions: make([]SessionInfo, 0, len(sessions)),
+	}
+	for _, sess := range sessions {
+		out.Sessions = append(out.Sessions, SessionInfo{
+			ConnectionID: sess.ConnectionID,
+			Database:     sess.Database,
+			OpenConns:    sess.OpenConns,
+			InUse:        sess.InUse,
+			Idle:         sess.Idle,
+		})
+	}
+	return out
+}
+
+// CancelQuery stops one running query.
+func (s *Service) CancelQuery(id string) { s.activity.Cancel(id) }
 
 // --- connection management ---------------------------------------------------------
 
@@ -118,20 +168,47 @@ func (s *Service) Connect(ctx context.Context, connID string) (*ConnectResult, e
 		return out, nil
 	}
 
-	dbs, err := sess.Driver.ListDatabases(ctx, sess.DB)
+	qctx, done := s.activity.Begin(ctx, connID, conn.Database, activity.KindIntrospect, "list databases")
+	dbs, err := sess.Driver.ListDatabases(qctx, sess.DB)
+	done()
 	if err != nil {
 		return nil, fmt.Errorf("listing databases: %w", err)
 	}
-	out.Databases = dbs
-	if out.DefaultDatabase == "" && len(dbs) > 0 {
-		out.DefaultDatabase = dbs[0].Name
+	out.Databases = s.filterDatabases(conn.Kind, dbs)
+	if out.DefaultDatabase == "" && len(out.Databases) > 0 {
+		out.DefaultDatabase = out.Databases[0].Name
 	}
 	return out, nil
 }
 
-func (s *Service) Disconnect(connID string) { s.engine.Disconnect(connID) }
+func (s *Service) Disconnect(connID string) {
+	// Cancel first: closing a pool with queries still running leaves those
+	// goroutines blocked until the server notices the socket has gone.
+	s.activity.CancelConnection(connID)
+	s.engine.Disconnect(connID)
+}
 
 func (s *Service) ConnectedIDs() []string { return s.engine.Connected() }
+
+// filterDatabases hides the server's own databases unless the user has asked
+// to see them.
+func (s *Service) filterDatabases(kind driver.Kind, dbs []driver.Database) []driver.Database {
+	if s.settings.Get().ShowSystemObjects {
+		return dbs
+	}
+	out := make([]driver.Database, 0, len(dbs))
+	for _, d := range dbs {
+		if !driver.IsSystemDatabase(kind, d.Name) {
+			out = append(out, d)
+		}
+	}
+	// Never hide everything: a server with only system databases should still
+	// show them rather than presenting an empty, unexplained list.
+	if len(out) == 0 {
+		return dbs
+	}
+	return out
+}
 
 // --- browsing ----------------------------------------------------------------------
 
@@ -143,7 +220,14 @@ func (s *Service) ListDatabases(ctx context.Context, connID string) ([]driver.Da
 	if !sess.Driver.Caps().ServerHostsDatabases {
 		return []driver.Database{{Name: "main"}}, nil
 	}
-	return sess.Driver.ListDatabases(ctx, sess.DB)
+
+	qctx, done := s.activity.Begin(ctx, connID, "", activity.KindIntrospect, "list databases")
+	defer done()
+	dbs, err := sess.Driver.ListDatabases(qctx, sess.DB)
+	if err != nil {
+		return nil, err
+	}
+	return s.filterDatabases(sess.Driver.Kind(), dbs), nil
 }
 
 func (s *Service) ListObjects(ctx context.Context, connID, database string) ([]driver.SchemaObject, error) {
@@ -151,14 +235,23 @@ func (s *Service) ListObjects(ctx context.Context, connID, database string) ([]d
 	if err != nil {
 		return nil, err
 	}
-	objs, err := sess.Driver.ListObjects(ctx, sess.DB, database)
+
+	qctx, done := s.activity.Begin(ctx, connID, database, activity.KindIntrospect, "list objects")
+	defer done()
+	objs, err := sess.Driver.ListObjects(qctx, sess.DB, database)
 	if err != nil {
 		return nil, err
 	}
-	if objs == nil {
-		objs = []driver.SchemaObject{}
+
+	showAll := s.settings.Get().ShowSystemObjects
+	kind := sess.Driver.Kind()
+	out := make([]driver.SchemaObject, 0, len(objs))
+	for _, o := range objs {
+		if showAll || !driver.IsSystemSchema(kind, o.Schema) {
+			out = append(out, o)
+		}
 	}
-	return objs, nil
+	return out, nil
 }
 
 func (s *Service) ListColumns(ctx context.Context, connID string, ref driver.ObjectRef) ([]driver.Column, error) {
@@ -166,7 +259,10 @@ func (s *Service) ListColumns(ctx context.Context, connID string, ref driver.Obj
 	if err != nil {
 		return nil, err
 	}
-	cols, err := sess.Driver.ListColumns(ctx, sess.DB, ref)
+
+	qctx, done := s.activity.Begin(ctx, connID, ref.Database, activity.KindIntrospect, "describe "+ref.Name)
+	defer done()
+	cols, err := sess.Driver.ListColumns(qctx, sess.DB, ref)
 	if err != nil {
 		return nil, err
 	}
@@ -208,13 +304,14 @@ func (s *Service) ReadRows(ctx context.Context, req ReadRowsRequest) (*ReadRowsR
 		return nil, err
 	}
 
-	cols, err := sess.Driver.ListColumns(ctx, sess.DB, req.Ref)
+	cols, err := s.ListColumns(ctx, req.ConnectionID, req.Ref)
 	if err != nil {
 		// Column metadata is a nicety; a view the user can select from but not
 		// introspect should still be browsable.
 		cols = []driver.Column{}
 	}
 
+	settings := s.settings.Get()
 	page := req.Pagination.Page
 	if page < 1 {
 		page = 1
@@ -226,7 +323,7 @@ func (s *Service) ReadRows(ctx context.Context, req ReadRowsRequest) (*ReadRowsR
 	if req.Pagination.Enabled {
 		size := req.Pagination.PageSize
 		if size <= 0 {
-			size = 100
+			size = settings.DefaultPageSize
 		}
 		// One extra row, trimmed before returning, is how HasMore is known.
 		opts.Limit = size + 1
@@ -237,7 +334,10 @@ func (s *Service) ReadRows(ctx context.Context, req ReadRowsRequest) (*ReadRowsR
 	if err != nil {
 		return nil, err
 	}
-	rs, err := driver.RunQuery(ctx, sess.DB, query, driver.HardRowCap)
+
+	qctx, done := s.activity.Begin(ctx, req.ConnectionID, req.Ref.Database, activity.KindBrowse, query)
+	defer done()
+	rs, err := driver.RunQuery(qctx, sess.DB, query, settings.RowCap)
 	if err != nil {
 		return nil, err
 	}
@@ -267,9 +367,12 @@ func (s *Service) CountRows(ctx context.Context, req CountRowsRequest) (int64, e
 	if err != nil {
 		return 0, err
 	}
-	var n int64
 	q := sess.Driver.BuildCount(req.Ref, req.Filter)
-	if err := sess.DB.QueryRowContext(ctx, q).Scan(&n); err != nil {
+	qctx, done := s.activity.Begin(ctx, req.ConnectionID, req.Ref.Database, activity.KindCount, q)
+	defer done()
+
+	var n int64
+	if err := sess.DB.QueryRowContext(qctx, q).Scan(&n); err != nil {
 		return 0, err
 	}
 	return n, nil
@@ -294,10 +397,18 @@ func (s *Service) RunSQL(ctx context.Context, req RunSQLRequest) (*driver.Result
 	if err != nil {
 		return nil, err
 	}
-	if returnsRows(stmt) {
-		return driver.RunQuery(ctx, sess.DB, stmt, req.MaxRows)
+
+	qctx, done := s.activity.Begin(ctx, req.ConnectionID, req.Database, activity.KindQuery, stmt)
+	defer done()
+
+	maxRows := req.MaxRows
+	if maxRows <= 0 {
+		maxRows = s.settings.Get().RowCap
 	}
-	return driver.Exec(ctx, sess.DB, stmt)
+	if returnsRows(stmt) {
+		return driver.RunQuery(qctx, sess.DB, stmt, maxRows)
+	}
+	return driver.Exec(qctx, sess.DB, stmt)
 }
 
 // returnsRows guesses from the leading keyword whether to use Query or Exec.

@@ -6,22 +6,35 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/alexlaw/db-pro/internal/activity"
 	"github.com/alexlaw/db-pro/internal/config"
 	"github.com/alexlaw/db-pro/internal/driver"
 	"github.com/alexlaw/db-pro/internal/engine"
 )
+
+// newService builds a Service over a real store, settings file, engine and
+// activity registry rooted at dir.
+func newService(t *testing.T, dir string) *Service {
+	t.Helper()
+	store, err := config.Open(dir)
+	if err != nil {
+		t.Fatalf("opening store: %v", err)
+	}
+	settings, err := config.OpenSettings(filepath.Join(dir, "settings.json"))
+	if err != nil {
+		t.Fatalf("opening settings: %v", err)
+	}
+	svc := New(store, settings, engine.New(), activity.New())
+	t.Cleanup(svc.Shutdown)
+	return svc
+}
 
 // newTestService wires the real store, engine and service against a throwaway
 // SQLite file, so these tests exercise the whole stack rather than a mock.
 func newTestService(t *testing.T) (*Service, string) {
 	t.Helper()
 	dir := t.TempDir()
-	store, err := config.Open(dir)
-	if err != nil {
-		t.Fatalf("opening store: %v", err)
-	}
-	svc := New(store, engine.New())
-	t.Cleanup(svc.Shutdown)
+	svc := newService(t, dir)
 
 	conn, err := svc.SaveConnection(SaveConnectionRequest{
 		Connection: config.Connection{
@@ -360,12 +373,8 @@ func TestReturnsRowsClassifier(t *testing.T) {
 // Deleting a connection must take its stored password with it.
 func TestDeletingAConnectionRemovesItsPassword(t *testing.T) {
 	dir := t.TempDir()
-	store, err := config.Open(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	svc := New(store, engine.New())
-	t.Cleanup(svc.Shutdown)
+	svc := newService(t, dir)
+	store := svc.store
 
 	pw := "hunter2"
 	conn, err := svc.SaveConnection(SaveConnectionRequest{
@@ -391,12 +400,8 @@ func TestDeletingAConnectionRemovesItsPassword(t *testing.T) {
 // Editing a connection without retyping the password must not blank it.
 func TestUpdateWithoutPasswordKeepsTheStoredOne(t *testing.T) {
 	dir := t.TempDir()
-	store, err := config.Open(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	svc := New(store, engine.New())
-	t.Cleanup(svc.Shutdown)
+	svc := newService(t, dir)
+	store := svc.store
 
 	pw := "hunter2"
 	conn, err := svc.SaveConnection(SaveConnectionRequest{
@@ -419,11 +424,7 @@ func TestUpdateWithoutPasswordKeepsTheStoredOne(t *testing.T) {
 // Connections must survive a restart — the store is reopened from disk here.
 func TestConnectionsPersistAcrossRestart(t *testing.T) {
 	dir := t.TempDir()
-	store, err := config.Open(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	svc := New(store, engine.New())
+	svc := newService(t, dir)
 	pw := "s3cret"
 	if _, err := svc.SaveConnection(SaveConnectionRequest{
 		Connection: config.Connection{Name: "keeper", Kind: driver.KindMySQL, Host: "db.internal"},

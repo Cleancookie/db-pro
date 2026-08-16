@@ -1,16 +1,30 @@
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useStore } from '../store'
 import type { Cell, Column, ResultSet, Sort } from '../types'
 
-const ROW_HEIGHT = 26
-const HEADER_HEIGHT = 30
-// Slightly wider than the true advance of the mono faces we target. Erring
-// high costs a little horizontal space; erring low truncates values, which is
-// the one thing a data grid must not do casually.
-const CHAR_PX = 7.6
-const MIN_COL = 84
-const MAX_COL = 460
 const WIDTH_SAMPLE_ROWS = 120
+
+/**
+ * Grid metrics derived from the root font size, so the Settings slider
+ * rescales rows, gutters and column widths together. Hardcoded pixels here
+ * would leave larger text clipped inside unchanged row heights.
+ */
+function metrics(rootPx: number) {
+  const cellPx = rootPx * 0.75 // the grid renders at 0.75rem
+  return {
+    rowHeight: Math.round(rootPx * 1.625),
+    headerHeight: Math.round(rootPx * 1.875),
+    gutter: Math.round(rootPx * 3.5),
+    // Slightly wider than the true advance of the mono faces we target.
+    // Erring high costs a little horizontal space; erring low truncates
+    // values, which is the one thing a data grid must not do casually.
+    charPx: cellPx * 0.64,
+    minCol: Math.round(rootPx * 5.25),
+    maxCol: Math.round(rootPx * 28.75),
+    padPx: Math.round(rootPx * 1.6),
+  }
+}
 
 interface Props {
   result: ResultSet
@@ -29,6 +43,8 @@ interface Props {
 export function DataGrid({ result, columns, orderBy, onSort, rowOffset = 0 }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [selected, setSelected] = useState<{ row: number; col: number } | null>(null)
+  const rootPx = useStore((s) => s.settings.fontSizePx)
+  const gm = useMemo(() => metrics(rootPx), [rootPx])
 
   const meta = useMemo(() => {
     const byName = new Map((columns ?? []).map((c) => [c.name, c]))
@@ -49,18 +65,24 @@ export function DataGrid({ result, columns, orderBy, onSort, rowOffset = 0 }: Pr
         const len = displayValue(row[i]).length
         if (len > longest) longest = len
       }
-      return Math.round(Math.min(MAX_COL, Math.max(MIN_COL, longest * CHAR_PX + 26)))
+      return Math.round(Math.min(gm.maxCol, Math.max(gm.minCol, longest * gm.charPx + gm.padPx)))
     })
-  }, [meta, result.rows])
+  }, [meta, result.rows, gm])
 
-  const totalWidth = widths.reduce((a, b) => a + b, 0) + 56
+  const totalWidth = widths.reduce((a, b) => a + b, 0) + gm.gutter
 
   const virtualizer = useVirtualizer({
     count: result.rows.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => ROW_HEIGHT,
+    estimateSize: () => gm.rowHeight,
     overscan: 12,
   })
+
+  // Row height changes with the font size, so the virtualiser has to remeasure
+  // or every row would keep its old height.
+  useEffect(() => {
+    virtualizer.measure()
+  }, [gm.rowHeight, virtualizer])
 
   // A new result set should start at the top, not wherever the last one was.
   useEffect(() => {
@@ -96,15 +118,15 @@ export function DataGrid({ result, columns, orderBy, onSort, rowOffset = 0 }: Pr
   const sort = orderBy?.[0]
 
   return (
-    <div ref={scrollRef} className="h-full overflow-auto font-[var(--font-mono)] text-[12px]">
+    <div ref={scrollRef} className="h-full overflow-auto font-[var(--font-mono)] text-[0.75rem]">
       <div style={{ width: totalWidth, minWidth: '100%' }}>
         <div
           className="chrome sticky top-0 z-10 flex border-b border-[var(--color-border-strong)] bg-[var(--color-panel)]"
-          style={{ height: HEADER_HEIGHT }}
+          style={{ height: gm.headerHeight }}
         >
           <div
             className="shrink-0 border-r border-[var(--color-border)]"
-            style={{ width: 56 }}
+            style={{ width: gm.gutter }}
             aria-hidden
           />
           {meta.map((m, i) => {
@@ -127,7 +149,7 @@ export function DataGrid({ result, columns, orderBy, onSort, rowOffset = 0 }: Pr
                   // wildly across the platforms this ships to, and a tofu box
                   // next to a column name reads as corruption.
                   <span
-                    className="shrink-0 rounded-sm bg-[var(--color-warn)]/20 px-1 text-[9px] font-semibold text-[var(--color-warn)]"
+                    className="shrink-0 rounded-sm bg-[var(--color-warn)]/20 px-1 text-[0.5625rem] font-semibold text-[var(--color-warn)]"
                     title="primary key"
                   >
                     PK
@@ -166,8 +188,8 @@ export function DataGrid({ result, columns, orderBy, onSort, rowOffset = 0 }: Pr
                 }}
               >
                 <div
-                  className="chrome flex shrink-0 items-center justify-end border-r border-[var(--color-border)] pr-2 text-[11px] text-[var(--color-faint)] select-none"
-                  style={{ width: 56 }}
+                  className="chrome flex shrink-0 items-center justify-end border-r border-[var(--color-border)] pr-2 text-[0.6875rem] text-[var(--color-faint)] select-none"
+                  style={{ width: gm.gutter }}
                 >
                   {rowOffset + v.index + 1}
                 </div>
@@ -178,10 +200,10 @@ export function DataGrid({ result, columns, orderBy, onSort, rowOffset = 0 }: Pr
                     <div
                       key={ci}
                       onMouseDown={() => setSelected({ row: v.index, col: ci })}
-                      className={`shrink-0 truncate border-r border-[var(--color-border)] px-2 leading-[26px] ${
+                      className={`shrink-0 truncate border-r border-[var(--color-border)] px-2 ${
                         m.numeric ? 'text-right' : ''
                       } ${isSelected ? 'bg-[var(--color-accent-dim)]/60 ring-1 ring-[var(--color-accent)] ring-inset' : ''}`}
-                      style={{ width: widths[ci] }}
+                      style={{ width: widths[ci], lineHeight: `${gm.rowHeight}px` }}
                       title={value === null ? 'NULL' : String(value)}
                     >
                       {value === null ? (

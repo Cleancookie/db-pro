@@ -8,6 +8,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
@@ -132,6 +133,42 @@ func (e *Engine) Disconnect(connID string) {
 			delete(e.sessions, k)
 		}
 	}
+}
+
+// SessionInfo describes one open session and its pool state, for the
+// activity page.
+type SessionInfo struct {
+	ConnectionID string
+	Database     string
+	OpenConns    int
+	InUse        int
+	Idle         int
+}
+
+// Sessions reports every open session. Pool counts come from database/sql,
+// so they reflect real sockets rather than what the app believes it has.
+func (e *Engine) Sessions() []SessionInfo {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	out := make([]SessionInfo, 0, len(e.sessions))
+	for _, s := range e.sessions {
+		st := s.DB.Stats()
+		out = append(out, SessionInfo{
+			ConnectionID: s.ConnID,
+			Database:     s.Database,
+			OpenConns:    st.OpenConnections,
+			InUse:        st.InUse,
+			Idle:         st.Idle,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].ConnectionID != out[j].ConnectionID {
+			return out[i].ConnectionID < out[j].ConnectionID
+		}
+		return out[i].Database < out[j].Database
+	})
+	return out
 }
 
 // Connected reports which saved connections currently have a live session.

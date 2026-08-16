@@ -1,0 +1,218 @@
+import { useState } from 'react'
+import { PAGE_SIZES, useStore } from '../store'
+import type { Settings } from '../types'
+
+/**
+ * Settings, reachable with Ctrl+, or from the palette.
+ *
+ * Changes to appearance apply live as they are adjusted — a font size you
+ * cannot see the effect of until you hit Save is guesswork. Everything is
+ * persisted on Save; Cancel restores what was there on open.
+ */
+export function SettingsDialog() {
+  const saved = useStore((s) => s.settings)
+  const saveSettings = useStore((s) => s.saveSettings)
+  const setDialog = useStore((s) => s.setDialog)
+
+  const [draft, setDraft] = useState<Settings>(saved)
+
+  const patch = (p: Partial<Settings>) => {
+    const next = { ...draft, ...p }
+    setDraft(next)
+    // Live preview for the one setting whose effect is purely visual.
+    if (p.fontSizePx != null) document.documentElement.style.fontSize = `${p.fontSizePx}px`
+  }
+
+  const cancel = () => {
+    document.documentElement.style.fontSize = `${saved.fontSizePx}px`
+    setDialog({ kind: 'none' })
+  }
+
+  return (
+    <div
+      className="chrome fixed inset-0 z-40 flex items-center justify-center bg-black/50"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) cancel()
+      }}
+    >
+      <form
+        onSubmit={(e) => {
+          e.preventDefault()
+          void saveSettings(draft)
+          setDialog({ kind: 'none' })
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') cancel()
+        }}
+        className="max-h-[85vh] w-[min(34rem,92vw)] overflow-y-auto rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-elevated)] shadow-2xl"
+      >
+        <h2 className="sticky top-0 border-b border-[var(--color-border)] bg-[var(--color-elevated)] px-4 py-3 font-semibold">
+          Settings
+        </h2>
+
+        <Group label="Appearance">
+          <Row
+            label="Interface size"
+            hint="Scales the whole interface, not just text"
+            control={
+              <div className="flex items-center gap-3">
+                <input
+                  type="range"
+                  min={12}
+                  max={22}
+                  step={1}
+                  value={draft.fontSizePx}
+                  onChange={(e) => patch({ fontSizePx: Number(e.target.value) })}
+                  className="flex-1"
+                  aria-label="Interface size"
+                />
+                <span className="w-12 shrink-0 text-right font-[var(--font-mono)] text-xs text-[var(--color-muted)]">
+                  {draft.fontSizePx}px
+                </span>
+              </div>
+            }
+          />
+        </Group>
+
+        <Group label="Browsing">
+          <Row
+            label="Paginate by default"
+            hint="Newly opened tables start paged"
+            control={
+              <input
+                type="checkbox"
+                checked={draft.paginationEnabled}
+                onChange={(e) => patch({ paginationEnabled: e.target.checked })}
+              />
+            }
+          />
+          <Row
+            label="Default page size"
+            control={
+              <select
+                value={draft.defaultPageSize}
+                onChange={(e) => patch({ defaultPageSize: Number(e.target.value) })}
+                className={selectClass}
+              >
+                {PAGE_SIZES.map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
+            }
+          />
+          <Row
+            label="Count rows automatically"
+            hint="Runs COUNT(*) after each page. Turn off on very large tables."
+            control={
+              <input
+                type="checkbox"
+                checked={draft.autoCount}
+                onChange={(e) => patch({ autoCount: e.target.checked })}
+              />
+            }
+          />
+          <Row
+            label="Row cap"
+            hint="Hard limit on any single result, including with pagination off"
+            control={
+              <input
+                type="number"
+                min={1}
+                max={1_000_000}
+                // step="any" disables HTML5 step validation. With a numeric
+                // step, any value not landing on a multiple silently blocks
+                // form submission — the whole dialog stops saving because one
+                // unrelated field is "invalid".
+                step="any"
+                value={draft.rowCap}
+                onChange={(e) => patch({ rowCap: Number(e.target.value) })}
+                className={`${selectClass} w-28 text-right`}
+              />
+            }
+          />
+        </Group>
+
+        <Group label="Catalogue">
+          <Row
+            label="Show system objects"
+            hint="Reveals server databases and schemas such as mysql, tempdb and pg_catalog"
+            control={
+              <input
+                type="checkbox"
+                checked={draft.showSystemObjects}
+                onChange={(e) => patch({ showSystemObjects: e.target.checked })}
+              />
+            }
+          />
+        </Group>
+
+        <Group label="Safety">
+          <Row
+            label="Confirm before removing a connection"
+            control={
+              <input
+                type="checkbox"
+                checked={draft.confirmDestructive}
+                onChange={(e) => patch({ confirmDestructive: e.target.checked })}
+              />
+            }
+          />
+        </Group>
+
+        <div className="sticky bottom-0 flex justify-end gap-2 border-t border-[var(--color-border)] bg-[var(--color-elevated)] px-4 py-3">
+          <button
+            type="button"
+            onClick={cancel}
+            className="rounded px-3 py-1.5 text-[var(--color-muted)] hover:text-[var(--color-text)]"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            className="rounded bg-[var(--color-accent-dim)] px-3 py-1.5 font-medium hover:bg-[var(--color-accent)]"
+          >
+            Save
+          </button>
+        </div>
+      </form>
+    </div>
+  )
+}
+
+const selectClass =
+  'rounded border border-[var(--color-border-strong)] bg-[var(--color-bg)] px-2 py-1 outline-none'
+
+function Group({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <section className="border-b border-[var(--color-border)] px-4 py-3 last:border-b-0">
+      <h3 className="mb-2 text-[0.625rem] font-semibold tracking-wider text-[var(--color-faint)] uppercase">
+        {label}
+      </h3>
+      <div className="flex flex-col gap-3">{children}</div>
+    </section>
+  )
+}
+
+function Row({
+  label,
+  hint,
+  control,
+}: {
+  label: string
+  hint?: string
+  control: React.ReactNode
+}) {
+  return (
+    <label className="flex items-start justify-between gap-4">
+      <span className="min-w-0 flex-1">
+        <span className="block">{label}</span>
+        {hint && (
+          <span className="block text-xs leading-relaxed text-[var(--color-faint)]">{hint}</span>
+        )}
+      </span>
+      <span className="shrink-0 pt-0.5">{control}</span>
+    </label>
+  )
+}

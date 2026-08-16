@@ -26,7 +26,7 @@ export function FilterBar() {
 
   return (
     <div className="chrome flex items-center gap-2 border-b border-[var(--color-border)] bg-[var(--color-panel)] px-3 py-1.5">
-      <span className="shrink-0 font-[var(--font-mono)] text-[11px] text-[var(--color-faint)]">
+      <span className="shrink-0 font-[var(--font-mono)] text-[0.6875rem] text-[var(--color-faint)]">
         WHERE
       </span>
       <input
@@ -48,12 +48,12 @@ export function FilterBar() {
         spellCheck={false}
         autoComplete="off"
         aria-label="Row filter, raw SQL after WHERE"
-        className={`min-w-0 flex-1 rounded border bg-[var(--color-elevated)] px-2 py-1 font-[var(--font-mono)] text-[12px] outline-none placeholder:text-[var(--color-faint)] ${
+        className={`min-w-0 flex-1 rounded border bg-[var(--color-elevated)] px-2 py-1 font-[var(--font-mono)] text-[0.75rem] outline-none placeholder:text-[var(--color-faint)] ${
           dirty ? 'border-[var(--color-warn)]' : 'border-[var(--color-border-strong)]'
         }`}
       />
       {dirty && (
-        <span className="shrink-0 text-[10px] text-[var(--color-warn)]">
+        <span className="shrink-0 text-[0.625rem] text-[var(--color-warn)]">
           Enter to apply
         </span>
       )}

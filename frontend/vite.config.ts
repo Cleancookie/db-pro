@@ -26,6 +26,8 @@ export default defineConfig({
   build: {
     // Wails embeds this directory via go:embed.
     outDir: 'dist',
-    emptyOutDir: true,
+    // Leaves the tracked .gitkeep in place. main.go embeds frontend/dist, so
+    // if a build wipes the directory a fresh clone no longer compiles.
+    emptyOutDir: false,
   },
 })

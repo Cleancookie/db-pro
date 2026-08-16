@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"path/filepath"
 
+	"github.com/alexlaw/db-pro/internal/activity"
 	"github.com/alexlaw/db-pro/internal/api"
 	"github.com/alexlaw/db-pro/internal/config"
 	"github.com/alexlaw/db-pro/internal/driver"
@@ -26,7 +28,11 @@ func NewApp() (*App, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &App{svc: api.New(store, engine.New())}, nil
+	settings, err := config.OpenSettings(filepath.Join(dir, "settings.json"))
+	if err != nil {
+		return nil, err
+	}
+	return &App{svc: api.New(store, settings, engine.New(), activity.New())}, nil
 }
 
 func (a *App) startup(ctx context.Context) { a.ctx = ctx }
@@ -76,3 +82,13 @@ func (a *App) CountRows(req api.CountRowsRequest) (int64, error) {
 func (a *App) RunSQL(req api.RunSQLRequest) (*driver.ResultSet, error) {
 	return a.svc.RunSQL(a.ctx, req)
 }
+
+func (a *App) GetSettings() config.Settings { return a.svc.GetSettings() }
+
+func (a *App) SaveSettings(v config.Settings) (config.Settings, error) {
+	return a.svc.SaveSettings(v)
+}
+
+func (a *App) Activity() api.ActivityResult { return a.svc.Activity() }
+
+func (a *App) CancelQuery(id string) { a.svc.CancelQuery(id) }

@@ -1,87 +1,112 @@
 /**
- * Subsequence fuzzy matching for the command palette.
+ * Matching and ranking for the command palette.
  *
- * Scoring rewards matches that a person would consider "obvious": characters
- * at the start of a word, runs of consecutive characters, and matches near the
- * front of the string. Without those bonuses, "usr" would rank a table called
- * `customer_status_records` above `users`, which makes the palette feel broken.
+ * The palette lives or dies on this file. The failure it exists to prevent:
+ * typing "user" on a Supabase database and getting a wall of
+ * `extensions.uuid_generate_v4`-style noise, because a loose subsequence
+ * matcher happily finds u-s-e-r scattered across a long unrelated name,
+ * while the table actually called `user` sits below the fold.
+ *
+ * The fix is tiers, not weights. A name that *contains* the query beats any
+ * scattered match, no matter how many bonus points the scatter accumulates.
+ * Only inside a tier do the finer scores matter.
  */
 
 export interface Match {
   score: number
-  /** Indices in the haystack that matched, for highlighting. */
+  /** Indices into the matched label, for highlighting. */
   positions: number[]
 }
 
-const CONSECUTIVE_BONUS = 12
-const WORD_START_BONUS = 10
-const CAMEL_BONUS = 8
-const LEADING_PENALTY = -1
-const MAX_LEADING_PENALTY = -12
-const UNMATCHED_PENALTY = -1
+/** Tier floors. The gaps are wide enough that no in-tier bonus can cross them. */
+const TIER_EXACT = 10_000
+const TIER_PREFIX = 8_000
+const TIER_WORD_START = 6_000
+const TIER_SUBSTRING = 4_000
+const TIER_QUALIFIED = 2_000
+const TIER_SUBSEQUENCE = 500
+
+const WORD_SEPARATORS = /[_\-. /]/
 
 function isWordBoundary(prev: string): boolean {
-  return prev === '_' || prev === '-' || prev === '.' || prev === ' ' || prev === '/'
+  return WORD_SEPARATORS.test(prev)
 }
 
-export function fuzzyMatch(query: string, haystack: string): Match | null {
+function range(start: number, length: number): number[] {
+  return Array.from({ length }, (_, i) => start + i)
+}
+
+/**
+ * Scores `query` against a single label. Returns null when there is no match
+ * at all. Shorter labels win ties, so `user` outranks `user_settings`.
+ */
+export function matchLabel(query: string, label: string): Match | null {
   if (!query) return { score: 0, positions: [] }
 
   const q = query.toLowerCase()
-  const h = haystack.toLowerCase()
+  const l = label.toLowerCase()
+  // Shorter is better, but only as a tie-break within a tier.
+  const brevity = Math.max(0, 200 - label.length)
 
-  // Cheap exact-substring path, scored high so "users" beats a scattered match.
-  const direct = h.indexOf(q)
-  if (direct >= 0) {
-    const positions = Array.from({ length: q.length }, (_, i) => direct + i)
-    let score = 100 + q.length * CONSECUTIVE_BONUS
-    if (direct === 0) score += 40
-    else if (isWordBoundary(h[direct - 1])) score += WORD_START_BONUS * 2
-    score += Math.max(MAX_LEADING_PENALTY, direct * LEADING_PENALTY)
-    return { score, positions }
+  if (l === q) {
+    return { score: TIER_EXACT + brevity, positions: range(0, label.length) }
+  }
+  if (l.startsWith(q)) {
+    return { score: TIER_PREFIX + brevity, positions: range(0, q.length) }
   }
 
+  const at = l.indexOf(q)
+  if (at > 0) {
+    const tier = isWordBoundary(l[at - 1]) ? TIER_WORD_START : TIER_SUBSTRING
+    // Earlier occurrences rank slightly higher.
+    return { score: tier + brevity - at, positions: range(at, q.length) }
+  }
+
+  const sub = subsequence(q, l)
+  if (!sub) return null
+  return { score: TIER_SUBSEQUENCE + sub.score + brevity * 0.1, positions: sub.positions }
+}
+
+/** Ordered-subsequence match, used only as the last resort tier. */
+function subsequence(q: string, l: string): Match | null {
   const positions: number[] = []
   let score = 0
-  let hi = 0
-  let lastMatch = -2
+  let li = 0
+  let last = -2
 
-  for (let qi = 0; qi < q.length; qi++) {
-    const target = q[qi]
+  for (const ch of q) {
     let found = -1
-    while (hi < h.length) {
-      if (h[hi] === target) {
-        found = hi
+    while (li < l.length) {
+      if (l[li] === ch) {
+        found = li
         break
       }
-      hi++
+      li++
     }
     if (found < 0) return null
 
-    if (found === lastMatch + 1) score += CONSECUTIVE_BONUS
-    if (found === 0) score += WORD_START_BONUS
-    else {
-      if (isWordBoundary(h[found - 1])) score += WORD_START_BONUS
-      // A capital following a lower-case letter starts a word in camelCase.
-      else if (
-        haystack[found] >= 'A' &&
-        haystack[found] <= 'Z' &&
-        haystack[found - 1] >= 'a' &&
-        haystack[found - 1] <= 'z'
-      ) {
-        score += CAMEL_BONUS
-      }
-    }
-    if (qi === 0) score += Math.max(MAX_LEADING_PENALTY, found * LEADING_PENALTY)
+    if (found === last + 1) score += 8
+    if (found === 0 || isWordBoundary(l[found - 1])) score += 6
 
     positions.push(found)
-    lastMatch = found
-    hi++
+    last = found
+    li++
   }
-
-  // Prefer the shorter of two otherwise-equal candidates.
-  score += (h.length - q.length) * UNMATCHED_PENALTY * 0.1
   return { score, positions }
+}
+
+/**
+ * A palette candidate. `name` is the thing the user is most likely typing —
+ * a bare table name. `qualifier` is the schema it lives in, matched only at a
+ * lower tier so `auth.user` still ranks above `extensions.something_user`.
+ */
+export interface Candidate {
+  name: string
+  qualifier?: string
+  /** Hidden synonyms, matched at the lowest tier. */
+  keywords?: string
+  /** Added to the final score. Negative demotes; used for noisy schemas. */
+  bias?: number
 }
 
 export interface Scored<T> {
@@ -89,14 +114,91 @@ export interface Scored<T> {
   match: Match
 }
 
-/** Filters and ranks, matching against each item's searchable text. */
-export function rank<T>(query: string, items: T[], text: (item: T) => string): Scored<T>[] {
+/**
+ * Scores a candidate. The returned positions always index `name`, so the
+ * highlight lines up with what the palette renders in bold.
+ */
+export function matchCandidate(query: string, c: Candidate): Match | null {
+  if (!query) return { score: c.bias ?? 0, positions: [] }
+
+  const bias = c.bias ?? 0
+  const qualified = c.qualifier ? `${c.qualifier}.${c.name}` : c.name
+
+  // A dotted query is an explicit "schema.table", so match it that way.
+  if (query.includes('.')) {
+    const m = matchLabel(query, qualified)
+    if (!m) return null
+    // Positions index the qualified string; shift them onto the name and drop
+    // any that fall in the schema part.
+    const offset = qualified.length - c.name.length
+    return {
+      score: m.score + bias,
+      positions: m.positions.map((p) => p - offset).filter((p) => p >= 0),
+    }
+  }
+
+  const onName = matchLabel(query, c.name)
+  if (onName) return { score: onName.score + bias, positions: onName.positions }
+
+  // Fall back to the schema and the hidden keywords, both capped below any
+  // real name match so they can never displace one.
+  const onQualified = c.qualifier ? matchLabel(query, qualified) : null
+  if (onQualified) {
+    return { score: Math.min(onQualified.score, TIER_QUALIFIED) + bias, positions: [] }
+  }
+
+  if (c.keywords) {
+    const onKeywords = matchLabel(query, c.keywords)
+    if (onKeywords) {
+      return { score: Math.min(onKeywords.score, TIER_QUALIFIED - 500) + bias, positions: [] }
+    }
+  }
+
+  return null
+}
+
+/** Filters and ranks a list of candidates. */
+export function rankCandidates<T>(
+  query: string,
+  items: T[],
+  toCandidate: (item: T) => Candidate,
+): Scored<T>[] {
   const out: Scored<T>[] = []
   for (const item of items) {
-    const match = fuzzyMatch(query, text(item))
+    const match = matchCandidate(query, toCandidate(item))
     if (match) out.push({ item, match })
   }
-  // Sort is stable in every engine we target, so equal scores keep the order
-  // the command registry defined — which is grouped meaningfully.
+  // Array.prototype.sort is stable, so equal scores keep registry order.
   return out.sort((a, b) => b.match.score - a.match.score)
+}
+
+/**
+ * Schemas that are technically the user's but are almost always framework
+ * plumbing. Objects in them still appear — they are just demoted, so a real
+ * table with the same name always wins.
+ *
+ * This is a heuristic about noise, not about correctness: getting it wrong
+ * costs a few rank positions, never a missing result.
+ */
+const NOISY_SCHEMAS = new Set([
+  'extensions',
+  'graphql',
+  'graphql_public',
+  'pgbouncer',
+  'realtime',
+  'storage',
+  'supabase_functions',
+  'supabase_migrations',
+  'vault',
+  'net',
+  'cron',
+  'pgsodium',
+  'pgsodium_masks',
+  '_timescaledb_internal',
+  '_timescaledb_catalog',
+])
+
+export function schemaBias(schema: string | undefined): number {
+  if (!schema) return 0
+  return NOISY_SCHEMAS.has(schema.toLowerCase()) ? -3_000 : 0
 }

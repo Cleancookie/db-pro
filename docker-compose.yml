@@ -1,0 +1,131 @@
+# Test databases for db-pro.
+#
+#   docker compose up -d mysql          # just MySQL
+#   docker compose up -d                # everything except SQL Server
+#   docker compose --profile mssql up -d  # add SQL Server (~2GB RAM)
+#
+# Every server is seeded with the same fixture schema (see docker/README.md),
+# chosen to exercise the things this app gets wrong most easily: bigints past
+# JavaScript's safe integer range, decimals, NULL next to empty string, binary
+# columns, a table with no primary key, and identifiers needing quoting.
+#
+# Credentials are deliberately trivial. These containers bind to localhost and
+# are for local testing only — never expose them.
+
+name: db-pro-test
+
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: dbpro-mysql
+    command: --local-infile=0
+    environment:
+      MYSQL_ROOT_PASSWORD: dbpro
+      MYSQL_DATABASE: shop
+    ports:
+      - '127.0.0.1:3306:3306'
+    volumes:
+      - ./docker/mysql:/docker-entrypoint-initdb.d:ro
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ['CMD', 'mysqladmin', 'ping', '-h', '127.0.0.1', '-uroot', '-pdbpro']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  # MariaDB is served by the same driver as MySQL. It is here because that
+  # claim is worth actually testing rather than assuming.
+  mariadb:
+    image: mariadb:11.4
+    container_name: dbpro-mariadb
+    environment:
+      MARIADB_ROOT_PASSWORD: dbpro
+      MARIADB_DATABASE: shop
+    ports:
+      - '127.0.0.1:3307:3306'
+    volumes:
+      - ./docker/mysql:/docker-entrypoint-initdb.d:ro
+      - mariadb-data:/var/lib/mysql
+    healthcheck:
+      test: ['CMD', 'healthcheck.sh', '--connect', '--innodb_initialized']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  postgres:
+    image: postgres:17
+    container_name: dbpro-postgres
+    environment:
+      POSTGRES_PASSWORD: dbpro
+      POSTGRES_USER: dbpro
+      POSTGRES_DB: shop
+    ports:
+      - '127.0.0.1:5432:5432'
+    volumes:
+      - ./docker/postgres:/docker-entrypoint-initdb.d:ro
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U dbpro -d shop']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # Profiled off by default: it wants ~2GB of RAM, which is a lot to spend if
+  # you only wanted a MySQL box.
+  mssql:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: dbpro-mssql
+    profiles: ['mssql']
+    environment:
+      ACCEPT_EULA: 'Y'
+      MSSQL_SA_PASSWORD: 'dbPro!Passw0rd'
+      MSSQL_PID: Developer
+    ports:
+      - '127.0.0.1:1433:1433'
+    volumes:
+      - mssql-data:/var/opt/mssql
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          '/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$$MSSQL_SA_PASSWORD" -C -Q "SELECT 1" || exit 1',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  # The SQL Server image has no docker-entrypoint-initdb.d, so seeding is a
+  # one-shot container that runs once the server reports healthy.
+  mssql-init:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: dbpro-mssql-init
+    profiles: ['mssql']
+    depends_on:
+      mssql:
+        condition: service_healthy
+    volumes:
+      - ./docker/mssql:/init:ro
+    entrypoint:
+      [
+        '/opt/mssql-tools18/bin/sqlcmd',
+        '-S',
+        'mssql',
+        '-U',
+        'sa',
+        '-P',
+        'dbPro!Passw0rd',
+        '-C',
+        '-b',
+        '-i',
+        '/init/01-schema.sql',
+      ]
+    restart: 'no'
+
+volumes:
+  mysql-data:
+  mariadb-data:
+  postgres-data:
+  mssql-data:

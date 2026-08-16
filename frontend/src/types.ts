@@ -99,3 +99,40 @@ export interface SaveConnectionRequest {
   /** null leaves the stored password untouched. */
   password: string | null
 }
+
+export interface Settings {
+  /** Root font size in px. The UI is sized in rem, so this scales all of it. */
+  fontSizePx: number
+  defaultPageSize: number
+  paginationEnabled: boolean
+  rowCap: number
+  showSystemObjects: boolean
+  autoCount: boolean
+  confirmDestructive: boolean
+}
+
+export type QueryKind = 'browse' | 'count' | 'query' | 'introspect'
+
+export interface RunningQuery {
+  id: string
+  connectionId: string
+  database: string
+  kind: QueryKind
+  sql: string
+  startedAt: string
+  elapsedMs: number
+  cancelled: boolean
+}
+
+export interface SessionInfo {
+  connectionId: string
+  database: string
+  openConns: number
+  inUse: number
+  idle: number
+}
+
+export interface ActivityResult {
+  queries: RunningQuery[]
+  sessions: SessionInfo[]
+}

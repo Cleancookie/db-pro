@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { api, errorMessage } from './api'
 import type {
+  ActivityResult,
   Capabilities,
   Column,
   Connection,
@@ -8,6 +9,7 @@ import type {
   ObjectRef,
   ResultSet,
   SchemaObject,
+  Settings,
   Sort,
 } from './types'
 
@@ -23,6 +25,31 @@ export type DialogState =
   | { kind: 'none' }
   | { kind: 'connection'; connection: Connection | null }
   | { kind: 'shortcuts' }
+  | { kind: 'settings' }
+  | { kind: 'confirmDelete'; connection: Connection }
+
+/** Which pane fills the main area. */
+export type View = 'data' | 'sql' | 'activity'
+
+/** Collapsible sidebar sections. */
+export type SectionKey = 'connections' | 'databases' | 'objects'
+
+/** An open right-click menu, positioned in viewport coordinates. */
+export interface ContextMenuState {
+  x: number
+  y: number
+  connection: Connection
+}
+
+export const DEFAULT_SETTINGS: Settings = {
+  fontSizePx: 16,
+  defaultPageSize: 100,
+  paginationEnabled: true,
+  rowCap: 100_000,
+  showSystemObjects: false,
+  autoCount: true,
+  confirmDestructive: true,
+}
 
 interface State {
   // catalogue
@@ -54,11 +81,15 @@ interface State {
   totalCount: number | null
 
   // sql editor
-  sqlOpen: boolean
   sqlText: string
   sqlResult: ResultSet | null
 
   // ui
+  view: View
+  collapsed: Record<SectionKey, boolean>
+  contextMenu: ContextMenuState | null
+  settings: Settings
+  activity: ActivityResult
   paletteOpen: boolean
   dialog: DialogState
   busy: boolean
@@ -79,7 +110,14 @@ interface State {
   setPaginationEnabled: (on: boolean) => Promise<void>
   toggleSort: (column: string) => Promise<void>
   clearSort: () => Promise<void>
-  setSqlOpen: (open: boolean) => void
+  setView: (v: View) => void
+  toggleSection: (k: SectionKey) => void
+  openContextMenu: (m: ContextMenuState) => void
+  closeContextMenu: () => void
+  loadSettings: () => Promise<void>
+  saveSettings: (s: Settings) => Promise<void>
+  refreshActivity: () => Promise<void>
+  cancelQuery: (id: string) => Promise<void>
   setSqlText: (t: string) => void
   runSql: () => Promise<void>
   saveConnection: (c: Connection, password: string | null) => Promise<void>
@@ -137,6 +175,10 @@ export const useStore = create<State>((set, get) => {
 
     // The count is deliberately not awaited above: COUNT(*) on a large table
     // is slow and must not delay the rows the user asked for.
+    if (!get().settings.autoCount) {
+      set({ totalCount: null })
+      return
+    }
     void (async () => {
       set({ totalCount: null })
       try {
@@ -172,9 +214,13 @@ export const useStore = create<State>((set, get) => {
     pageSize: 100,
     hasMore: false,
     totalCount: null,
-    sqlOpen: false,
     sqlText: '',
     sqlResult: null,
+    view: 'data',
+    collapsed: { connections: false, databases: false, objects: false },
+    contextMenu: null,
+    settings: DEFAULT_SETTINGS,
+    activity: { queries: [], sessions: [] },
     paletteOpen: false,
     dialog: { kind: 'none' },
     busy: false,
@@ -182,12 +228,22 @@ export const useStore = create<State>((set, get) => {
 
     async init() {
       try {
-        const [drivers, connections, connectedIds] = await Promise.all([
+        const [drivers, connections, connectedIds, settings] = await Promise.all([
           api.drivers(),
           api.listConnections(),
           api.connectedIds(),
+          api.getSettings(),
         ])
-        set({ drivers, connections, connectedIds: connectedIds ?? [] })
+        set({
+          drivers,
+          connections,
+          connectedIds: connectedIds ?? [],
+          settings,
+          // Seed the browse controls from the saved preferences.
+          pageSize: settings.defaultPageSize,
+          paginationEnabled: settings.paginationEnabled,
+        })
+        applyFontSize(settings.fontSizePx)
       } catch (e) {
         get().pushToast('error', errorMessage(e))
       }
@@ -285,7 +341,7 @@ export const useStore = create<State>((set, get) => {
         page: 1,
         totalCount: null,
         result: null,
-        sqlOpen: false,
+        view: 'data',
       })
       await fetchRows()
     },
@@ -337,8 +393,61 @@ export const useStore = create<State>((set, get) => {
       await fetchRows()
     },
 
-    setSqlOpen(sqlOpen) {
-      set({ sqlOpen })
+    setView(view) {
+      set({ view })
+      // Entering the activity page should show current data immediately
+      // rather than after the first poll tick.
+      if (view === 'activity') void get().refreshActivity()
+    },
+
+    toggleSection(k) {
+      set({ collapsed: { ...get().collapsed, [k]: !get().collapsed[k] } })
+    },
+
+    openContextMenu(contextMenu) {
+      set({ contextMenu })
+    },
+
+    closeContextMenu() {
+      set({ contextMenu: null })
+    },
+
+    async loadSettings() {
+      try {
+        const settings = await api.getSettings()
+        set({ settings })
+        applyFontSize(settings.fontSizePx)
+      } catch (e) {
+        get().pushToast('error', errorMessage(e))
+      }
+    },
+
+    async saveSettings(next) {
+      try {
+        const saved = await api.saveSettings(next)
+        set({ settings: saved })
+        applyFontSize(saved.fontSizePx)
+      } catch (e) {
+        get().pushToast('error', errorMessage(e))
+      }
+    },
+
+    async refreshActivity() {
+      try {
+        set({ activity: await api.activity() })
+      } catch {
+        // The activity page polls; a transient failure would otherwise
+        // produce a stream of toasts the user cannot act on.
+      }
+    },
+
+    async cancelQuery(id) {
+      try {
+        await api.cancelQuery(id)
+        await get().refreshActivity()
+      } catch (e) {
+        get().pushToast('error', errorMessage(e))
+      }
     },
 
     setSqlText(sqlText) {
@@ -385,6 +494,7 @@ export const useStore = create<State>((set, get) => {
         await api.deleteConnection(id)
         if (get().activeConnectionId === id) await get().disconnect(id)
         await get().refreshConnections()
+        set({ dialog: { kind: 'none' }, contextMenu: null })
       } catch (e) {
         get().pushToast('error', errorMessage(e))
       }
@@ -413,3 +523,11 @@ export const useStore = create<State>((set, get) => {
     },
   }
 })
+
+/**
+ * The whole UI is sized in rem, so setting the root font size rescales
+ * spacing and controls together rather than leaving big text in small boxes.
+ */
+function applyFontSize(px: number) {
+  document.documentElement.style.fontSize = `${px}px`
+}

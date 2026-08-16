@@ -6,6 +6,7 @@
 // See docs/adr/0001-go-core-with-two-transports.md.
 
 import type {
+  ActivityResult,
   Capabilities,
   Column,
   Connection,
@@ -17,6 +18,7 @@ import type {
   ResultSet,
   SaveConnectionRequest,
   SchemaObject,
+  Settings,
   Sort,
 } from './types'
 
@@ -119,6 +121,14 @@ export const api = {
 
   runSql: (req: { connectionId: string; database: string; sql: string; maxRows: number }) =>
     call<ResultSet>('RunSQL', [req], req),
+
+  getSettings: () => call<Settings>('GetSettings', [], {}),
+
+  saveSettings: (s: Settings) => call<Settings>('SaveSettings', [s], s),
+
+  activity: () => call<ActivityResult>('Activity', [], {}),
+
+  cancelQuery: (id: string) => call<void>('CancelQuery', [id], { id }),
 }
 
 export function errorMessage(e: unknown): string {
