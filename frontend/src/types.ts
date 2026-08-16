@@ -1,0 +1,101 @@
+// Mirrors the Go DTOs in internal/driver, internal/config and internal/api.
+// Kept hand-written rather than generated so the browser transport does not
+// depend on `wails generate` having been run.
+
+export type Kind = 'mysql' | 'postgres' | 'mssql' | 'sqlite'
+
+export interface Capabilities {
+  serverHostsDatabases: boolean
+  hasSchemas: boolean
+  databasePerConnection: boolean
+  supportsFunctions: boolean
+  defaultPort: number
+  displayName: string
+}
+
+export interface Connection {
+  id: string
+  name: string
+  kind: Kind
+  host?: string
+  port?: number
+  user?: string
+  database?: string
+  file?: string
+  sslMode?: string
+  params?: Record<string, string>
+  colour?: string
+  createdAt?: string
+  updatedAt?: string
+}
+
+export type ObjectType = 'table' | 'view' | 'function' | 'procedure'
+
+export interface SchemaObject {
+  schema: string
+  name: string
+  type: ObjectType
+  rowEstimate?: number
+}
+
+export interface Column {
+  name: string
+  dataType: string
+  nullable: boolean
+  primaryKey: boolean
+  default?: string
+  ordinal: number
+}
+
+export interface ObjectRef {
+  database: string
+  schema: string
+  name: string
+}
+
+export interface Sort {
+  column: string
+  desc: boolean
+}
+
+export interface ResultColumn {
+  name: string
+  dbType: string
+}
+
+/** Cell values are limited to these by internal/driver/scan.go. */
+export type Cell = string | number | boolean | null
+
+export interface ResultSet {
+  columns: ResultColumn[]
+  rows: Cell[][]
+  truncated: boolean
+  elapsedMs: number
+  rowsAffected?: number
+  query: string
+}
+
+export interface Pagination {
+  enabled: boolean
+  page: number
+  pageSize: number
+}
+
+export interface ReadRowsResult {
+  result: ResultSet
+  columns: Column[]
+  page: number
+  hasMore: boolean
+}
+
+export interface ConnectResult {
+  capabilities: Capabilities
+  databases: { name: string }[]
+  defaultDatabase: string
+}
+
+export interface SaveConnectionRequest {
+  connection: Connection
+  /** null leaves the stored password untouched. */
+  password: string | null
+}

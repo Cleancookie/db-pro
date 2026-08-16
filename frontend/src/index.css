@@ -1,0 +1,82 @@
+@import 'tailwindcss';
+
+/*
+ * A single dark theme. A database GUI is looked at for hours at a time and the
+ * grid is dense; the palette here is low-contrast in the chrome and
+ * high-contrast in the data, so the eye lands on rows rather than borders.
+ */
+@theme {
+  --color-bg: #16181d;
+  --color-panel: #1b1e24;
+  --color-elevated: #21252c;
+  --color-border: #2b3038;
+  --color-border-strong: #3a414b;
+  --color-text: #dfe3ea;
+  --color-muted: #8b939f;
+  --color-faint: #626a76;
+  --color-accent: #4f9cf9;
+  --color-accent-dim: #2b5c99;
+  --color-danger: #f4736c;
+  --color-success: #5dd6a0;
+  --color-warn: #e2b567;
+
+  --font-mono: ui-monospace, 'Cascadia Code', 'JetBrains Mono', Menlo, Consolas, monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-size: 13px;
+  /* The webview is a fixed app frame, not a document — page-level scrolling
+     would detach the header from the grid. */
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Text selection is meaningful in the grid and nowhere else; disabling it in
+   the chrome stops drag-selection from fighting with row clicks. */
+.chrome {
+  user-select: none;
+}
+
+::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-border-strong);
+  border-radius: 6px;
+  border: 3px solid var(--color-bg);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #4a525e;
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+input,
+textarea,
+select,
+button {
+  font: inherit;
+  color: inherit;
+}
+
+/* A visible focus ring matters more than usual here: the app is driven by the
+   keyboard, so where focus sits must never be ambiguous. */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -1px;
+}
