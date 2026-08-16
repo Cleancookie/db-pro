@@ -13,7 +13,13 @@ import (
 //go:embed all:frontend/dist
 var assets embed.FS
 
+// version is stamped at link time by the Makefile
+// (-ldflags "-X main.version=..."). It is the git describe of the build.
+var version = "dev"
+
 func main() {
+	log.Printf("db-pro %s", version)
+
 	app, err := NewApp()
 	if err != nil {
 		log.Fatalf("db-pro: %v", err)
