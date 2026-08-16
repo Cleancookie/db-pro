@@ -34,13 +34,6 @@ export type View = 'data' | 'sql' | 'activity'
 /** Collapsible sidebar sections. */
 export type SectionKey = 'connections' | 'databases' | 'objects'
 
-/** An open right-click menu, positioned in viewport coordinates. */
-export interface ContextMenuState {
-  x: number
-  y: number
-  connection: Connection
-}
-
 export const DEFAULT_SETTINGS: Settings = {
   fontSizePx: 16,
   defaultPageSize: 100,
@@ -87,7 +80,6 @@ interface State {
   // ui
   view: View
   collapsed: Record<SectionKey, boolean>
-  contextMenu: ContextMenuState | null
   settings: Settings
   activity: ActivityResult
   paletteOpen: boolean
@@ -112,8 +104,6 @@ interface State {
   clearSort: () => Promise<void>
   setView: (v: View) => void
   toggleSection: (k: SectionKey) => void
-  openContextMenu: (m: ContextMenuState) => void
-  closeContextMenu: () => void
   loadSettings: () => Promise<void>
   saveSettings: (s: Settings) => Promise<void>
   refreshActivity: () => Promise<void>
@@ -218,7 +208,6 @@ export const useStore = create<State>((set, get) => {
     sqlResult: null,
     view: 'data',
     collapsed: { connections: false, databases: false, objects: false },
-    contextMenu: null,
     settings: DEFAULT_SETTINGS,
     activity: { queries: [], sessions: [] },
     paletteOpen: false,
@@ -404,14 +393,6 @@ export const useStore = create<State>((set, get) => {
       set({ collapsed: { ...get().collapsed, [k]: !get().collapsed[k] } })
     },
 
-    openContextMenu(contextMenu) {
-      set({ contextMenu })
-    },
-
-    closeContextMenu() {
-      set({ contextMenu: null })
-    },
-
     async loadSettings() {
       try {
         const settings = await api.getSettings()
@@ -494,7 +475,7 @@ export const useStore = create<State>((set, get) => {
         await api.deleteConnection(id)
         if (get().activeConnectionId === id) await get().disconnect(id)
         await get().refreshConnections()
-        set({ dialog: { kind: 'none' }, contextMenu: null })
+        set({ dialog: { kind: 'none' } })
       } catch (e) {
         get().pushToast('error', errorMessage(e))
       }

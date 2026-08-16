@@ -1,4 +1,5 @@
 import { useStore } from '../store'
+import { Dialog, dialogButton } from '../ui'
 
 const SHORTCUTS: [string, string][] = [
   ['Ctrl+K', 'Command palette'],
@@ -18,37 +19,30 @@ const SHORTCUTS: [string, string][] = [
 
 export function ShortcutsDialog() {
   const setDialog = useStore((s) => s.setDialog)
+  const close = () => setDialog({ kind: 'none' })
+
   return (
-    <div
-      className="chrome fixed inset-0 z-40 flex items-center justify-center bg-black/50"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) setDialog({ kind: 'none' })
-      }}
+    <Dialog
+      open
+      onClose={close}
+      title="Keyboard shortcuts"
+      widthClass="w-[min(28rem,92vw)]"
+      footer={
+        <button onClick={close} className={`ml-auto ${dialogButton.secondary}`}>
+          Close
+        </button>
+      }
     >
-      <div className="w-[min(440px,92vw)] rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-elevated)] shadow-2xl">
-        <h2 className="border-b border-[var(--color-border)] px-4 py-3 font-semibold">
-          Keyboard shortcuts
-        </h2>
-        <dl className="p-4">
-          {SHORTCUTS.map(([key, what]) => (
-            <div key={key} className="flex items-baseline gap-4 py-1">
-              <dt className="w-44 shrink-0 font-[var(--font-mono)] text-[0.6875rem] text-[var(--color-accent)]">
-                {key}
-              </dt>
-              <dd className="text-[var(--color-muted)]">{what}</dd>
-            </div>
-          ))}
-        </dl>
-        <div className="border-t border-[var(--color-border)] px-4 py-3 text-right">
-          <button
-            autoFocus
-            onClick={() => setDialog({ kind: 'none' })}
-            className="rounded border border-[var(--color-border-strong)] px-3 py-1.5 hover:border-[var(--color-accent)]"
-          >
-            Close
-          </button>
-        </div>
-      </div>
-    </div>
+      <dl className="p-4">
+        {SHORTCUTS.map(([key, what]) => (
+          <div key={key} className="flex items-baseline gap-4 py-1">
+            <dt className="w-44 shrink-0 font-[var(--font-mono)] text-[0.6875rem] text-[var(--color-accent)]">
+              {key}
+            </dt>
+            <dd className="text-[var(--color-muted)]">{what}</dd>
+          </div>
+        ))}
+      </dl>
+    </Dialog>
   )
 }

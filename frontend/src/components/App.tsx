@@ -4,7 +4,7 @@ import { transportName } from '../api'
 import { useStore } from '../store'
 import { ActivityPage } from './ActivityPage'
 import { CommandPalette } from './CommandPalette'
-import { ConfirmDeleteDialog, ContextMenu } from './ContextMenu'
+import { ConfirmDeleteDialog } from './ConnectionMenu'
 import { ConnectionDialog } from './ConnectionDialog'
 import { DataGrid } from './DataGrid'
 import { FilterBar } from './FilterBar'
@@ -111,7 +111,6 @@ export function App() {
       </div>
 
       <CommandPalette />
-      <ContextMenu />
       {dialog.kind === 'connection' && <ConnectionDialog existing={dialog.connection} />}
       {dialog.kind === 'shortcuts' && <ShortcutsDialog />}
       {dialog.kind === 'settings' && <SettingsDialog />}
@@ -176,10 +175,12 @@ function useGlobalHotkeys() {
         return
       }
 
+      // Escape here only closes the palette, which is hand-rolled. Dialogs and
+      // menus dismiss themselves through the ui layer — unmounting them from
+      // out here would pre-empt the close sequence that restores focus to
+      // whatever opened them.
       if (e.key === 'Escape') {
-        if (s.contextMenu) s.closeContextMenu()
-        else if (s.paletteOpen) s.setPaletteOpen(false)
-        else if (s.dialog.kind !== 'none') s.setDialog({ kind: 'none' })
+        if (s.paletteOpen) s.setPaletteOpen(false)
         return
       }
 

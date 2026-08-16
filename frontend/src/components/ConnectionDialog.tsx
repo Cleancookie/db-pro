@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api, errorMessage } from '../api'
 import { useStore } from '../store'
+import { dialogButton, FormDialog } from '../ui'
 import type { Connection, Kind } from '../types'
 
 const KIND_ORDER: Kind[] = ['postgres', 'mysql', 'mssql', 'sqlite']
@@ -61,26 +62,48 @@ export function ConnectionDialog({ existing }: { existing: Connection | null }) 
 
   const canSave = conn.name.trim() !== '' && (isFileBased ? !!conn.file : !!conn.host)
 
+  const close = () => setDialog({ kind: 'none' })
+
   return (
-    <div
-      className="chrome fixed inset-0 z-40 flex items-center justify-center bg-black/50"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) setDialog({ kind: 'none' })
+    <FormDialog
+      open
+      onClose={close}
+      title={existing ? `Edit ${existing.name}` : 'New connection'}
+      widthClass="w-[min(32.5rem,92vw)]"
+      onSubmit={() => {
+        if (canSave) void saveConnection(conn, password)
       }}
+      footer={
+        <>
+          <button
+            type="button"
+            onClick={() => void runTest()}
+            disabled={test.state === 'testing' || !canSave}
+            className={dialogButton.secondary}
+          >
+            {test.state === 'testing' ? 'Testing…' : 'Test'}
+          </button>
+          {existing && (
+            <button
+              type="button"
+              onClick={() => {
+                void deleteConnection(existing.id)
+                close()
+              }}
+              className={dialogButton.danger}
+            >
+              Delete
+            </button>
+          )}
+          <button type="button" onClick={close} className={`ml-auto ${dialogButton.ghost}`}>
+            Cancel
+          </button>
+          <button type="submit" disabled={!canSave} className={dialogButton.primary}>
+            Save
+          </button>
+        </>
+      }
     >
-      <form
-        onSubmit={(e) => {
-          e.preventDefault()
-          if (canSave) void saveConnection(conn, password)
-        }}
-        onKeyDown={(e) => {
-          if (e.key === 'Escape') setDialog({ kind: 'none' })
-        }}
-        className="w-[min(520px,92vw)] rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-elevated)] shadow-2xl"
-      >
-        <h2 className="border-b border-[var(--color-border)] px-4 py-3 font-semibold">
-          {existing ? `Edit ${existing.name}` : 'New connection'}
-        </h2>
 
         <div className="grid grid-cols-2 gap-3 p-4">
           <Field label="Name" className="col-span-2">
@@ -184,46 +207,7 @@ export function ConnectionDialog({ existing }: { existing: Connection | null }) 
           <p className="mx-4 mb-3 text-[0.6875rem] text-[var(--color-success)]">Connected successfully</p>
         )}
 
-        <div className="flex items-center gap-2 border-t border-[var(--color-border)] px-4 py-3">
-          <button
-            type="button"
-            onClick={() => void runTest()}
-            disabled={test.state === 'testing' || !canSave}
-            className="rounded border border-[var(--color-border-strong)] px-3 py-1.5 disabled:opacity-40 enabled:hover:border-[var(--color-accent)]"
-          >
-            {test.state === 'testing' ? 'Testing…' : 'Test'}
-          </button>
-
-          {existing && (
-            <button
-              type="button"
-              onClick={() => {
-                void deleteConnection(existing.id)
-                setDialog({ kind: 'none' })
-              }}
-              className="rounded border border-[var(--color-border-strong)] px-3 py-1.5 text-[var(--color-danger)] hover:border-[var(--color-danger)]"
-            >
-              Delete
-            </button>
-          )}
-
-          <button
-            type="button"
-            onClick={() => setDialog({ kind: 'none' })}
-            className="ml-auto rounded px-3 py-1.5 text-[var(--color-muted)] hover:text-[var(--color-text)]"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            disabled={!canSave}
-            className="rounded bg-[var(--color-accent-dim)] px-3 py-1.5 font-medium disabled:opacity-40 enabled:hover:bg-[var(--color-accent)]"
-          >
-            Save
-          </button>
-        </div>
-      </form>
-    </div>
+    </FormDialog>
   )
 }
 

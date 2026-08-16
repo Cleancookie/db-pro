@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { describeConnection, formatCount, objectCandidate, OBJECT_ICON, qualifiedName } from '../commands'
 import { rankCandidates } from '../fuzzy'
 import { useStore, type SectionKey } from '../store'
+import { ConnectionMenu } from './ConnectionMenu'
 import type { ObjectType, SchemaObject } from '../types'
 
 const GROUP_ORDER: ObjectType[] = ['table', 'view', 'function', 'procedure']
@@ -26,7 +27,6 @@ export function Sidebar() {
   const selectDatabase = useStore((s) => s.selectDatabase)
   const openObject = useStore((s) => s.openObject)
   const setDialog = useStore((s) => s.setDialog)
-  const openContextMenu = useStore((s) => s.openContextMenu)
 
   const [objectQuery, setObjectQuery] = useState('')
   const [dbQuery, setDbQuery] = useState('')
@@ -74,31 +74,28 @@ export function Sidebar() {
           {connections.map((c) => {
             const active = c.id === activeConnectionId
             return (
-              <button
-                key={c.id}
-                onClick={() => connect(c.id)}
-                onContextMenu={(e) => {
-                  e.preventDefault()
-                  openContextMenu({ x: e.clientX, y: e.clientY, connection: c })
-                }}
-                className={`flex w-full items-center gap-2 rounded px-1.5 py-1 text-left ${
-                  active ? 'bg-[var(--color-accent-dim)]/45' : 'hover:bg-[var(--color-elevated)]'
-                }`}
-              >
-                <span
-                  className="h-2 w-2 shrink-0 rounded-full"
-                  style={{
-                    background: c.colour || (connectedIds.includes(c.id) ? '#5dd6a0' : '#4a525e'),
-                  }}
-                  title={connectedIds.includes(c.id) ? 'connected' : 'not connected'}
-                />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate">{c.name}</span>
-                  <span className="block truncate text-[0.6875rem] text-[var(--color-faint)]">
-                    {describeConnection(c.kind, c.host, c.file)}
+              <ConnectionMenu key={c.id} connection={c}>
+                <button
+                  onClick={() => connect(c.id)}
+                  className={`flex w-full items-center gap-2 rounded px-1.5 py-1 text-left ${
+                    active ? 'bg-[var(--color-accent-dim)]/45' : 'hover:bg-[var(--color-elevated)]'
+                  }`}
+                >
+                  <span
+                    className="h-2 w-2 shrink-0 rounded-full"
+                    style={{
+                      background: c.colour || (connectedIds.includes(c.id) ? '#5dd6a0' : '#4a525e'),
+                    }}
+                    title={connectedIds.includes(c.id) ? 'connected' : 'not connected'}
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate">{c.name}</span>
+                    <span className="block truncate text-[0.6875rem] text-[var(--color-faint)]">
+                      {describeConnection(c.kind, c.host, c.file)}
+                    </span>
                   </span>
-                </span>
-              </button>
+                </button>
+              </ConnectionMenu>
             )
           })}
         </div>

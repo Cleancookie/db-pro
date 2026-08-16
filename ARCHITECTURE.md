@@ -33,9 +33,31 @@ and `cmd/devserver` are both ~100 lines of pass-through. That buys three things:
 2. The frontend can be exercised in a normal browser with normal devtools.
 3. If Wails is ever the wrong choice, only the binding layer is thrown away.
 
-The frontend picks its transport at runtime (`frontend/src/transport/index.ts`): if
+The frontend picks its transport at runtime (`frontend/src/api.ts`): if
 `window.go` exists it uses Wails bindings, otherwise it POSTs to `/api/:method`. The
 call signatures are identical, so no component knows or cares which is in play.
+
+## The frontend component layer
+
+`frontend/src/ui/` is the only place allowed to import a component library.
+Everything else imports from `../ui` and sees our own narrow API — `Dialog`
+takes `title`, `footer` and children, not a dozen vendor subcomponents.
+
+Radix Primitives sits behind it, chosen for behaviour rather than styling:
+focus trapping and restoration, scroll locking, `aria-hidden` on the
+background, and keyboard navigation with typeahead in menus. All of that was
+either missing or faked in the hand-rolled versions, and all of it matters in
+an app driven from the keyboard. The styling stays ours — Radix ships none.
+
+Deliberately *not* behind the layer: the command palette (its ranking in
+`fuzzy.ts` is the point of it), the data grid (virtualised), and native
+`<select>`/`<checkbox>` (already correct and accessible).
+
+One mismatch the layer absorbs: this app mounts a dialog already-open and
+unmounts it to close, so Radix's own open→closed transition never runs and its
+focus restore never fires. `ui/Dialog.tsx` captures the opener during first
+render and restores focus on unmount. That is the kind of vendor-shaped detail
+the boundary exists to keep out of the rest of the app.
 
 ## The driver interface
 

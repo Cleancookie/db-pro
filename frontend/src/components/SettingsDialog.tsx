@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { PAGE_SIZES, useStore } from '../store'
+import { dialogButton, FormDialog } from '../ui'
 import type { Settings } from '../types'
 
 /**
@@ -29,26 +30,26 @@ export function SettingsDialog() {
   }
 
   return (
-    <div
-      className="chrome fixed inset-0 z-40 flex items-center justify-center bg-black/50"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) cancel()
+    <FormDialog
+      open
+      onClose={cancel}
+      title="Settings"
+      widthClass="w-[min(34rem,92vw)]"
+      onSubmit={() => {
+        void saveSettings(draft)
+        setDialog({ kind: 'none' })
       }}
+      footer={
+        <>
+          <button type="button" onClick={cancel} className={`ml-auto ${dialogButton.ghost}`}>
+            Cancel
+          </button>
+          <button type="submit" className={dialogButton.primary}>
+            Save
+          </button>
+        </>
+      }
     >
-      <form
-        onSubmit={(e) => {
-          e.preventDefault()
-          void saveSettings(draft)
-          setDialog({ kind: 'none' })
-        }}
-        onKeyDown={(e) => {
-          if (e.key === 'Escape') cancel()
-        }}
-        className="max-h-[85vh] w-[min(34rem,92vw)] overflow-y-auto rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-elevated)] shadow-2xl"
-      >
-        <h2 className="sticky top-0 border-b border-[var(--color-border)] bg-[var(--color-elevated)] px-4 py-3 font-semibold">
-          Settings
-        </h2>
 
         <Group label="Appearance">
           <Row
@@ -161,23 +162,7 @@ export function SettingsDialog() {
           />
         </Group>
 
-        <div className="sticky bottom-0 flex justify-end gap-2 border-t border-[var(--color-border)] bg-[var(--color-elevated)] px-4 py-3">
-          <button
-            type="button"
-            onClick={cancel}
-            className="rounded px-3 py-1.5 text-[var(--color-muted)] hover:text-[var(--color-text)]"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            className="rounded bg-[var(--color-accent-dim)] px-3 py-1.5 font-medium hover:bg-[var(--color-accent)]"
-          >
-            Save
-          </button>
-        </div>
-      </form>
-    </div>
+    </FormDialog>
   )
 }
 

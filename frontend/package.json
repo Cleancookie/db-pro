@@ -13,6 +13,8 @@
   "license": "ISC",
   "type": "module",
   "dependencies": {
+    "@radix-ui/react-context-menu": "^2.3.7",
+    "@radix-ui/react-dialog": "^1.1.23",
     "@tanstack/react-virtual": "^3.14.9",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
