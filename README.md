@@ -43,11 +43,8 @@ the same API the Wails bindings do. This is how you develop on Linux/WSL without
 native webview installed.
 
 ```sh
-# terminal 1 — Go API on :34567
-go run ./cmd/devserver
-
-# terminal 2 — Vite dev server on :5173, proxying /api to the above
-cd frontend && npm install && npm run dev
+make dev   # terminal 1 — Go API on :34567
+make web   # terminal 2 — Vite on :5173, proxying /api to the above
 ```
 
 Open <http://localhost:5173>.
@@ -55,12 +52,19 @@ Open <http://localhost:5173>.
 ### Desktop app
 
 ```sh
-wails dev                                  # native window with hot reload
-wails build -platform windows/amd64        # -> build/bin/db-pro.exe
+make windows          # -> build/bin/db-pro.exe
+make wails-dev        # native window with hot reload
+make                  # list every target
 ```
 
 `wails dev` on Linux needs `webkit2gtk-4.1` and `libgtk-3-dev`. Windows needs the
 WebView2 runtime (present on Windows 11 and any updated Windows 10).
+
+## Tracking
+
+- [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md) — what was asked for, what was
+  decided, and the invariants that must not regress
+- [docs/WISHLIST.md](docs/WISHLIST.md) — wanted, not yet built
 
 ## Where things live
 
