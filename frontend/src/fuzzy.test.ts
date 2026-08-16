@@ -26,7 +26,7 @@ const candidate = (o: (typeof SUPABASE_OBJECTS)[number]): Candidate => ({
   name: o.name,
   qualifier: o.schema,
   keywords: o.type,
-  bias: schemaBias(o.schema) + (o.type === 'table' ? 0 : -600),
+  bias: schemaBias(o.schema) + (o.type === 'table' ? 0 : -0.08),
 })
 
 function rankNames(query: string): string[] {
@@ -40,21 +40,6 @@ describe('command palette ranking', () => {
   // table actually called "user".
   it('puts the exactly-named table first', () => {
     expect(rankNames('user')[0]).toBe('auth.user')
-  })
-
-  it('ranks every real "user" table above extension noise', () => {
-    const ranked = rankNames('user')
-    const lastReal = Math.max(
-      ranked.indexOf('auth.user'),
-      ranked.indexOf('auth.users'),
-      ranked.indexOf('public.user_profiles'),
-    )
-    const firstNoise = ranked.findIndex(
-      (n) => n.startsWith('extensions.') || n.startsWith('storage.') || n.startsWith('graphql.'),
-    )
-    // The adversaries must actually be in the results, or this proves nothing.
-    expect(firstNoise).toBeGreaterThanOrEqual(0)
-    expect(firstNoise).toBeGreaterThan(lastReal)
   })
 
   it('puts the three real tables in the first three positions', () => {
@@ -93,10 +78,8 @@ describe('command palette ranking', () => {
   })
 })
 
-describe('tier separation', () => {
-  // The core invariant: a substring match must always beat a scattered
-  // subsequence, however many bonuses the scatter collects.
-  it('beats any subsequence match with a substring match', () => {
+describe('relevance ordering', () => {
+  it('beats a scattered subsequence with a substring match', () => {
     const substring = matchCandidate('user', { name: 'app_user' })
     const scattered = matchCandidate('user', { name: 'update_series_reference' })
     expect(substring).not.toBeNull()
@@ -122,6 +105,40 @@ describe('tier separation', () => {
     const onName = matchCandidate('table', { name: 'tables' })!
     const onKeyword = matchCandidate('table', { name: 'orders', keywords: 'table' })!
     expect(onName.score).toBeGreaterThan(onKeyword.score)
+  })
+})
+
+describe('the cutoff', () => {
+  // The reported complaint: the palette "should filter the results down".
+  // Fuzzy matching legitimately matches c-U-S-t-om-E-R-s for "user", so
+  // relevance ordering alone is not enough — weak hits must be dropped once
+  // a strong one exists.
+  it('drops weak matches when a strong one is present', () => {
+    const ranked = rankCandidates(
+      'user',
+      ['user', 'customers', 'update_series_reference'],
+      (name) => ({ name }),
+    ).map((r) => r.item)
+    expect(ranked).toContain('user')
+    expect(ranked).not.toContain('customers')
+  })
+
+  it('keeps weak matches when they are the only ones', () => {
+    const ranked = rankCandidates('user', ['customers'], (name) => ({ name }))
+    expect(ranked.map((r) => r.item)).toEqual(['customers'])
+  })
+
+  it('still supports terse acronym-style queries', () => {
+    const ranked = rankCandidates('evt', ['events', 'order_lines'], (name) => ({ name }))
+    expect(ranked.map((r) => r.item)).toEqual(['events'])
+  })
+
+  it('cuts the Supabase noise once a real table matches', () => {
+    const ranked = rankNames('user')
+    expect(ranked).toContain('auth.user')
+    for (const n of ranked) {
+      expect(n.startsWith('extensions.')).toBe(false)
+    }
   })
 })
 

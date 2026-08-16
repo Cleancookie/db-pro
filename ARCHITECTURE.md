@@ -59,6 +59,32 @@ focus restore never fires. `ui/Dialog.tsx` captures the opener during first
 render and restores focus on unmount. That is the kind of vendor-shaped detail
 the boundary exists to keep out of the rest of the app.
 
+## Command palette matching
+
+Scoring is delegated to `fuzzysort` (`frontend/src/fuzzy.ts`) — the same class
+of matcher behind VS Code's file finder. What stays local to this app:
+
+- **Where to match.** A bare query is scored against the object *name*; the
+  schema and hidden keywords are only consulted at a discount, so "user" finds
+  `auth.user` rather than everything in a schema whose name contains those
+  letters.
+- **Bias.** Framework schemas (Supabase's `extensions`, `graphql`, …) and
+  routines are demoted so a real table wins a close contest.
+- **A relative cutoff.** This is what makes the list feel filtered. Fuzzy
+  matching is inherently permissive — "user" legitimately matches `customers`
+  via c-U-S-t-om-E-R-s — so results below half the best score are dropped. With
+  a strong hit on screen the junk disappears; with only weak hits, they are all
+  still offered rather than showing nothing.
+
+Two rendering details that are easy to get wrong and were both bugs:
+
+- Ranking interleaves groups, but the list draws a heading whenever the group
+  changes — which produced a dozen headings for seventeen results. Results are
+  regrouped after ranking, each group ordered by its best member.
+- Match positions index the candidate *name*, while the row renders the longer
+  *title* ("auth.user", "Connect to prod"). They must be shifted onto the title
+  or the highlight lands on the wrong characters.
+
 ## The driver interface
 
 Every dialect implements `driver.Driver` (see `internal/driver/driver.go`). The

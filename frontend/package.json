@@ -16,6 +16,7 @@
     "@radix-ui/react-context-menu": "^2.3.7",
     "@radix-ui/react-dialog": "^1.1.23",
     "@tanstack/react-virtual": "^3.14.9",
+    "fuzzysort": "^4.0.2",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "zustand": "^5.0.15"

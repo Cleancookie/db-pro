@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { buildCommands, type Command } from '../commands'
-import { rankCandidates } from '../fuzzy'
+import { rankCandidates, type Scored } from '../fuzzy'
 import { useStore } from '../store'
 
 /**
@@ -20,7 +20,7 @@ export function CommandPalette() {
   const commands = useMemo(() => (open ? buildCommands(useStore.getState()) : []), [open])
 
   const results = useMemo(
-    () => rankCandidates(query, commands, (c) => c.candidate).slice(0, 200),
+    () => groupContiguously(rankCandidates(query, commands, (c) => c.candidate)).slice(0, 200),
     [query, commands],
   )
 
@@ -139,7 +139,10 @@ export function CommandPalette() {
                 >
                   <span className="min-w-0 flex-1">
                     <span className="block truncate">
-                      <Highlighted text={item.title} positions={match.positions} />
+                      <Highlighted
+                        text={item.title}
+                        positions={alignToTitle(item, match.positions)}
+                      />
                     </span>
                     {item.subtitle && (
                       <span className="block truncate text-[0.6875rem] text-[var(--color-muted)]">
@@ -163,8 +166,51 @@ export function CommandPalette() {
 }
 
 /**
- * Highlights the matched characters. Positions index the full search text
- * (title + subtitle + keywords), so any that fall past the title are ignored.
+ * Keeps each group's entries together while preserving relevance order.
+ *
+ * Ranking alone interleaves groups, and the list renders a heading whenever
+ * the group changes — so a plain sorted list produced a dozen repeated
+ * headings for seventeen results, which read as no filtering at all.
+ *
+ * Groups are ordered by their best-scoring member, so the most relevant group
+ * still leads, and entries stay in rank order within it.
+ */
+function groupContiguously<T extends { group: string }>(
+  results: Scored<T>[],
+): Scored<T>[] {
+  const groups = new Map<string, Scored<T>[]>()
+  for (const r of results) {
+    const list = groups.get(r.item.group)
+    if (list) list.push(r)
+    else groups.set(r.item.group, [r])
+  }
+  // Map preserves insertion order, and `results` is already sorted, so the
+  // first time a group appears is its best hit.
+  return [...groups.values()].flat()
+}
+
+/**
+ * Shifts match positions from the candidate name onto the displayed title.
+ *
+ * Positions index `candidate.name` — the bare table name, or a command's core
+ * label — while the row renders `title`, which is usually longer: "auth.user"
+ * against "user", or "Connect to prod" against "prod". Applied unshifted they
+ * highlight the wrong characters entirely.
+ *
+ * Titles are built by prefixing the name, so a suffix match gives the offset.
+ * When the two are unrelated the match came from a schema or hidden keyword
+ * and there is nothing honest to highlight.
+ */
+function alignToTitle(item: Command, positions: number[]): number[] {
+  if (positions.length === 0) return positions
+  const { title, candidate } = item
+  if (!title.endsWith(candidate.name)) return []
+  const offset = title.length - candidate.name.length
+  return offset === 0 ? positions : positions.map((p) => p + offset)
+}
+
+/**
+ * Highlights the matched characters.
  */
 function Highlighted({ text, positions }: { text: string; positions: number[] }) {
   if (positions.length === 0) return <>{text}</>

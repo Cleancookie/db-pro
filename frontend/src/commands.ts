@@ -32,18 +32,18 @@ export const OBJECT_ICON: Record<ObjectType, string> = {
 }
 
 /**
- * Tables are what people navigate to; routines are usually noise in a
- * name search. This only breaks ties inside a match tier — it can never push
- * a function above a table that matched more strongly.
+ * Tables are what people navigate to; routines are usually noise in a name
+ * search. Values are on fuzzysort's 0–1 scale, so these are nudges — a
+ * function that matches strongly still beats a table that barely matches.
  */
 function typeBias(t: ObjectType): number {
   switch (t) {
     case 'table':
       return 0
     case 'view':
-      return -50
+      return -0.02
     default:
-      return -600
+      return -0.08
   }
 }
 
@@ -98,7 +98,8 @@ export function buildCommands(s: Store): Command[] {
     title: 'New connection…',
     group: 'Connections',
     candidate: {
-      name: 'New connection',
+      // Matches the title exactly so highlighting lines up — see alignToTitle.
+      name: 'New connection…',
       keywords: 'add create database server mysql postgres mssql sqlite',
     },
     run: () => s.setDialog({ kind: 'connection', connection: null }),
@@ -131,7 +132,7 @@ export function buildCommands(s: Store): Command[] {
         id: `database:${db}`,
         title: `Use database ${db}`,
         group: 'Databases',
-        candidate: { name: db, keywords: 'use database switch catalog', bias: -200 },
+        candidate: { name: db, keywords: 'use database switch catalog', bias: -0.05 },
         run: () => s.selectDatabase(db),
       })
     }
@@ -209,7 +210,7 @@ export function buildCommands(s: Store): Command[] {
           id: `page:size:${n}`,
           title: `Page size: ${n}`,
           group: 'Pagination',
-          candidate: { name: `Page size ${n}`, keywords: 'rows per page limit', bias: -300 },
+          candidate: { name: `Page size ${n}`, keywords: 'rows per page limit', bias: -0.1 },
           run: () => s.setPageSize(n),
         })
       }
