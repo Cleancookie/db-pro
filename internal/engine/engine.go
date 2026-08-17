@@ -37,14 +37,27 @@ func New() *Engine {
 	return &Engine{sessions: map[string]*Session{}}
 }
 
-// key decides how finely sessions are pooled. Postgres needs one connection
-// per database because it cannot switch; MySQL and SQL Server reach other
-// databases through qualified names, so one connection serves the server.
-func key(connID, database string, caps driver.Capabilities) string {
-	if caps.DatabasePerConnection {
-		return connID + "\x00" + database
-	}
-	return connID
+// key decides how finely sessions are pooled: one session per connection *and*
+// database, for every dialect.
+//
+// Postgres has no choice — it cannot switch database on an open connection. The
+// others could, in principle, with `USE`, and this used to pool them per
+// connection alone on the grounds that they reach other databases through
+// qualified names. That is true for browsing, where the driver qualifies every
+// name it emits, and false for the SQL editor, where the statement is the
+// user's own text and `select * from users` means whatever the connection's
+// default database is.
+//
+// `USE` cannot fix that. A Session holds a *sql.DB, which is a pool: `USE`
+// would run on whichever pooled connection served it and leave the others
+// pointing at the old database, so the editor's target would depend on which
+// socket it happened to get. Keying per database means the database is in the
+// DSN, which every connection in that pool is opened with.
+//
+// The cost is more pools — one per database visited, rather than one per
+// server. They are closed together on disconnect.
+func key(connID, database string, _ driver.Capabilities) string {
+	return connID + "\x00" + database
 }
 
 // Acquire returns a live session, opening one if necessary. database may be

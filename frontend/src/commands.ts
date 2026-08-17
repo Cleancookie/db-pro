@@ -7,8 +7,9 @@
  * only when connected.
  */
 
-import { schemaBias, type Candidate } from './fuzzy'
+import type { Candidate } from './fuzzy'
 import { reportText } from './startup'
+import { objectBias, orderByRecency, refKey } from './recency'
 import { PAGE_SIZES, type useStore } from './store'
 import type { ObjectType, SchemaObject } from './types'
 
@@ -33,27 +34,16 @@ export const OBJECT_ICON: Record<ObjectType, string> = {
 }
 
 /**
- * Tables are what people navigate to; routines are usually noise in a name
- * search. Values are on fuzzysort's 0–1 scale, so these are nudges — a
- * function that matches strongly still beats a table that barely matches.
+ * `recentIndex` is the object's position in the recently opened list, or -1.
+ * With an empty query a candidate's score *is* its bias (see matchCandidate),
+ * so this is what produces most-recent-first when the palette opens.
  */
-function typeBias(t: ObjectType): number {
-  switch (t) {
-    case 'table':
-      return 0
-    case 'view':
-      return -0.02
-    default:
-      return -0.08
-  }
-}
-
-export function objectCandidate(o: SchemaObject): Candidate {
+export function objectCandidate(o: SchemaObject, recentIndex = -1): Candidate {
   return {
     name: o.name,
     qualifier: o.schema || undefined,
     keywords: o.type,
-    bias: schemaBias(o.schema) + typeBias(o.type),
+    bias: objectBias(o.schema, o.type, recentIndex),
   }
 }
 
@@ -73,14 +63,29 @@ export function buildNavigationCommands(s: Store): Command[] {
 
   // Objects first: navigating to a table is by far the most common reason to
   // open this palette, so those entries lead when nothing has been typed.
+  //
+  // Recently opened ones lead within that, and are grouped separately so the
+  // few tables being worked on right now are visually distinct from the whole
+  // catalogue. This is what stands in for tabs, which this app does not have.
   if (s.activeConnectionId) {
-    for (const o of s.objects) {
+    const recent = new Map(s.recentObjects.map((k, i) => [k, i]))
+    // The object currently on screen is excluded from Recent: offering to
+    // navigate to where you already are is noise at the top of the list.
+    const indexOf = (o: SchemaObject) =>
+      s.activeRef?.name === o.name &&
+      s.activeRef?.schema === o.schema &&
+      s.activeRef?.database === s.activeDatabase
+        ? -1
+        : (recent.get(refKey(s.activeDatabase, o.schema, o.name)) ?? -1)
+
+    for (const o of orderByRecency(s.objects, indexOf)) {
+      const i = indexOf(o)
       cmds.push({
         id: `object:${qualifiedName(o)}:${o.type}`,
         title: qualifiedName(o),
         subtitle: o.type + (o.rowEstimate != null ? ` · ~${formatCount(o.rowEstimate)} rows` : ''),
-        group: 'Open',
-        candidate: objectCandidate(o),
+        group: i >= 0 ? 'Recent' : 'Open',
+        candidate: objectCandidate(o, i),
         run: () => s.openObject(o),
       })
     }

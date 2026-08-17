@@ -133,6 +133,7 @@ export interface Settings {
   autoCount: boolean
   confirmDestructive: boolean
   sidebarWidthPx: number
+  trayHeightPx: number
 }
 
 export type QueryKind = 'browse' | 'count' | 'query' | 'introspect'

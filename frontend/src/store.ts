@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { api, errorMessage } from './api'
 import { absoluteRowOffset, cellText, isCellTruncated } from './cells'
+import { RECENT_LIMIT, refKey } from './recency'
 import { mark, reportText } from './startup'
 import type {
   ActivityResult,
@@ -77,6 +78,7 @@ export const DEFAULT_SETTINGS: Settings = {
   autoCount: true,
   confirmDestructive: true,
   sidebarWidthPx: 256,
+  trayHeightPx: 260,
 }
 
 interface State {
@@ -94,6 +96,18 @@ interface State {
 
   // active object
   activeRef: ObjectRef | null
+  /**
+   * Objects opened this session, most recent first, as refKey strings.
+   *
+   * There are no tabs in this app — deliberately — so switching back and forth
+   * happens through the palette, and the palette is only as good as its
+   * ordering. Alphabetical is useless for that: the two tables being compared
+   * are rarely neighbours in the alphabet.
+   *
+   * Session-only. Persisting it would mean a list of table names in the config
+   * file for a need that is entirely about the last few minutes.
+   */
+  recentObjects: string[]
   columns: Column[]
   result: ResultSet | null
   orderBy: Sort[]
@@ -270,6 +284,7 @@ export const useStore = create<State>((set, get) => {
     activeDatabase: '',
     objects: [],
     activeRef: null,
+    recentObjects: [],
     columns: [],
     result: null,
     orderBy: [],
@@ -406,8 +421,12 @@ export const useStore = create<State>((set, get) => {
         s.pushToast('info', `${o.name} is a ${o.type} — open the SQL editor to call it`)
         return
       }
+      const key = refKey(s.activeDatabase, o.schema, o.name)
       set({
         activeRef: { database: s.activeDatabase, schema: o.schema, name: o.name },
+        // Moved to the front, and de-duplicated, so re-opening a table does not
+        // leave a stale copy further down the list.
+        recentObjects: [key, ...s.recentObjects.filter((k) => k !== key)].slice(0, RECENT_LIMIT),
         // A new table starts clean: carrying a filter written for the previous
         // table over would almost always be a syntax error.
         filter: '',

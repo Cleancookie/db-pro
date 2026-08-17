@@ -24,6 +24,7 @@ export function SqlEditor() {
   const objects = useStore((s) => s.objects)
   const columns = useStore((s) => s.columns)
   const activeRef = useStore((s) => s.activeRef)
+  const activeDatabase = useStore((s) => s.activeDatabase)
   const kind = useActiveKind()
   const hasSchemas = useHasSchemas()
   const cellMenu = useCellMenu('sql')
@@ -42,6 +43,17 @@ export function SqlEditor() {
         <span className="text-[0.625rem] font-semibold tracking-wider text-[var(--color-faint)] uppercase">
           SQL
         </span>
+        {/* Which database the statement will run against. The connection is
+            already scoped to it, so `use` is never needed — but that is only
+            reassuring if it is on screen. */}
+        {activeDatabase && (
+          <span
+            title="Statements run against this database — chosen in the sidebar"
+            className="max-w-[12rem] truncate rounded bg-[var(--color-elevated)] px-1.5 py-0.5 font-[var(--font-mono)] text-[0.625rem] text-[var(--color-muted)]"
+          >
+            {activeDatabase}
+          </span>
+        )}
         <button
           onClick={() => void runSql()}
           disabled={busy || !sqlText.trim()}

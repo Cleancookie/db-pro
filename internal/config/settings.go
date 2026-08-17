@@ -37,6 +37,9 @@ type Settings struct {
 	// physical screen space, and scaling it with the font size would move an
 	// edge the user had put somewhere deliberately.
 	SidebarWidthPx int `json:"sidebarWidthPx"`
+	// TrayHeightPx is the expanded activity tray's height, dragged the same way
+	// and in pixels for the same reason.
+	TrayHeightPx int `json:"trayHeightPx"`
 }
 
 // DefaultSettings is also the fallback for any field missing from disk.
@@ -53,6 +56,7 @@ func DefaultSettings() Settings {
 		AutoCount:          true,
 		ConfirmDestructive: true,
 		SidebarWidthPx:     256,
+		TrayHeightPx:       260,
 	}
 }
 
@@ -74,6 +78,9 @@ func (s Settings) clamp() Settings {
 	// is unusable; above the upper one the grid is.
 	if s.SidebarWidthPx < 180 || s.SidebarWidthPx > 560 {
 		s.SidebarWidthPx = d.SidebarWidthPx
+	}
+	if s.TrayHeightPx < 96 || s.TrayHeightPx > 720 {
+		s.TrayHeightPx = d.TrayHeightPx
 	}
 	// 0 is meaningful here — it means "do not cap" — so only a negative or
 	// absurd value falls back.

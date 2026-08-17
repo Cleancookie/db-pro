@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { transportName } from '../api'
+import { LIMITS, Resizer, useResizable } from './Resizer'
 import {
   elapsedFor,
   hiddenCatalogueCount,
@@ -69,6 +70,7 @@ export function ActivityTray() {
   // setting — it is a way of looking at the log, not a preference about how
   // the app behaves.
   const [showCatalogue, setShowCatalogue] = useState(false)
+  const resize = useResizable('trayHeightPx', LIMITS.tray)
 
   // The app is the only thing that issues queries, so its own count of
   // outstanding calls is the whole answer to "is there anything to watch".
@@ -92,7 +94,15 @@ export function ActivityTray() {
   return (
     <div className="chrome relative shrink-0 border-t border-[var(--color-border)] bg-[var(--color-panel)]">
       {open && (
-        <div className="absolute inset-x-0 bottom-full flex max-h-[40vh] flex-col border-t border-[var(--color-border)] bg-[var(--color-panel)] shadow-[0_-8px_24px_rgba(0,0,0,0.45)]">
+        <div
+          // Height is inline because it is dragged. Capped by the viewport as
+          // well as by the setting: a height saved on a large monitor must not
+          // bury the grid on a small one.
+          style={{ height: `min(${resize.size}px, 80vh)` }}
+          className="absolute inset-x-0 bottom-full flex flex-col border-t border-[var(--color-border)] bg-[var(--color-panel)] shadow-[0_-8px_24px_rgba(0,0,0,0.45)]"
+        >
+          {/* Dragging the top edge upwards makes the tray taller, hence invert. */}
+          <Resizer {...resize} axis="y" invert label="Resize the activity tray" className="top-0" />
           {/* Column widths are repeated in QueryRow. Fixed rather than a grid
               so a row appearing cannot shift the columns of the rest. */}
           <div className="flex shrink-0 items-center gap-2 border-b border-[var(--color-border)] px-3 py-1 text-[0.625rem] tracking-wider text-[var(--color-faint)] uppercase">

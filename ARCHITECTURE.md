@@ -155,6 +155,26 @@ split and is the one in most people's fingers. `Ctrl+Shift+P` also switches
 between the two while one is open; `Ctrl+P` cannot, because inside a palette it
 is already the emacs-style move-up binding.
 
+## No tabs, so the palette remembers
+
+Objects are offered most-recently-opened first, in a `Recent` group above the
+rest of the catalogue. This is what stands in for tabs, which the app
+deliberately does not have: alphabetical order is no help when switching between
+two tables, since the two being compared are rarely neighbours in the alphabet.
+
+Recency is a **bias**, not a sort key (`frontend/src/recency.ts`), which is what
+lets it coexist with matching. On an empty query a candidate's score *is* its
+bias, so the list opens in recency order; on a typed query a clearly better name
+match still wins. The magnitude — 0.3 — was chosen against the other biases: it
+exceeds the -0.25 noisy-schema penalty, so a table opened moments ago in
+`extensions` still surfaces, because having just looked at something is better
+evidence than the schema's reputation.
+
+The object currently on screen is excluded, since offering to navigate to where
+you already are is noise at the top of the list. The list is session-only; keys
+are `database\0schema\0name`, NUL-separated because an identifier may contain a
+dot and `('a', 'b.c')` must not collide with `('a.b', 'c')`.
+
 ## Command palette matching
 
 Scoring is delegated to `fuzzysort` (`frontend/src/fuzzy.ts`) — the same class
@@ -199,8 +219,19 @@ The main asymmetries the interface has to absorb:
 | Placeholder | `?` | `$1` | `@p1` | `?` |
 | Pagination | `LIMIT n OFFSET m` | `LIMIT n OFFSET m` | `OFFSET m ROWS FETCH NEXT n ROWS ONLY` | `LIMIT n OFFSET m` |
 
-Postgres needing a fresh connection per database is the reason `engine` keys its pool
-on `(connectionID, database)` rather than just `connectionID`.
+`engine` keys its pool on `(connectionID, database)` for **every** dialect.
+Postgres has no choice, since it cannot switch database on an open connection.
+The others could switch with `USE`, and used to be pooled per connection alone
+on the grounds that they reach other databases through qualified names — which
+is true for browsing, where the driver qualifies every name it emits, and false
+for the SQL editor, where `select * from users` means whatever the connection's
+default database is.
+
+`USE` cannot fix that: a `Session` holds a `*sql.DB`, which is a pool, so `USE`
+would run on whichever pooled connection served it and leave the rest pointing
+at the old database — the editor's target would depend on which socket it got.
+Putting the database in the DSN, which is what keying per database does, is the
+only version that holds for a pool.
 
 SQL Server's `OFFSET/FETCH` requires an `ORDER BY`. When the user has not chosen a
 sort, the mssql driver falls back to ordering by the primary key, then by the first
