@@ -3,6 +3,7 @@ import { focusFilter } from '../commands'
 import { transportName } from '../api'
 import { useStore } from '../store'
 import { ActivityPage } from './ActivityPage'
+import { CellDialog } from './CellDialog'
 import { CommandPalette } from './CommandPalette'
 import { ConfirmDeleteDialog } from './ConnectionMenu'
 import { ConnectionDialog } from './ConnectionDialog'
@@ -30,6 +31,7 @@ export function App() {
   const runningCount = useStore((s) => s.activity.queries.length)
   const toggleSort = useStore((s) => s.toggleSort)
   const setView = useStore((s) => s.setView)
+  const openCell = useStore((s) => s.openCell)
 
   useEffect(() => {
     void init()
@@ -97,6 +99,7 @@ export function App() {
                     orderBy={orderBy}
                     onSort={(c) => void toggleSort(c)}
                     rowOffset={paginationEnabled ? (page - 1) * pageSize : 0}
+                    onOpenCell={(r, c) => openCell('browse', r, c)}
                   />
                 ) : (
                   <Placeholder text={busy ? 'Loading…' : 'No rows'} />
@@ -114,6 +117,7 @@ export function App() {
       {dialog.kind === 'connection' && <ConnectionDialog existing={dialog.connection} />}
       {dialog.kind === 'shortcuts' && <ShortcutsDialog />}
       {dialog.kind === 'settings' && <SettingsDialog />}
+      {dialog.kind === 'cell' && <CellDialog cell={dialog.cell} />}
       {dialog.kind === 'confirmDelete' && (
         <ConfirmDeleteDialog name={dialog.connection.name} id={dialog.connection.id} />
       )}

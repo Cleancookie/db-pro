@@ -319,6 +319,7 @@ func (s *Service) ReadRows(ctx context.Context, req ReadRowsRequest) (*ReadRowsR
 	opts := driver.ReadOptions{
 		Filter:  req.Filter,
 		OrderBy: req.OrderBy,
+		TextCap: settings.TextCapChars,
 	}
 	if req.Pagination.Enabled {
 		size := req.Pagination.PageSize
@@ -337,7 +338,10 @@ func (s *Service) ReadRows(ctx context.Context, req ReadRowsRequest) (*ReadRowsR
 
 	qctx, done := s.activity.Begin(ctx, req.ConnectionID, req.Ref.Database, activity.KindBrowse, query)
 	defer done()
-	rs, err := driver.RunQuery(qctx, sess.DB, query, settings.RowCap)
+	rs, err := driver.RunQuery(qctx, sess.DB, query, driver.QueryOptions{
+		RowCap:  settings.RowCap,
+		TextCap: settings.TextCapChars,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -351,6 +355,77 @@ func (s *Service) ReadRows(ctx context.Context, req ReadRowsRequest) (*ReadRowsR
 		}
 	}
 	return out, nil
+}
+
+// ReadCellRequest asks for one cell in full — the escape hatch from the text
+// cap, for the value the user has actually stopped to look at.
+//
+// The cell is addressed in the coordinates the grid is already displaying: the
+// filter and sort that produced the page, plus the row's absolute offset within
+// that result. Re-running the same query for one column of one row works on
+// any table or view, with or without a primary key, which a key-based lookup
+// would not. The trade is that the row is identified by position, so on a
+// table being written to concurrently — or ordered only by whatever the server
+// felt like — the value fetched may not be the one that was on screen.
+type ReadCellRequest struct {
+	ConnectionID string           `json:"connectionId"`
+	Ref          driver.ObjectRef `json:"ref"`
+	Column       string           `json:"column"`
+	// Filter and OrderBy must be the ones the page was read with, or the
+	// offset addresses a different row.
+	Filter  string        `json:"filter"`
+	OrderBy []driver.Sort `json:"orderBy"`
+	// RowOffset is 0-based and absolute, not relative to the page.
+	RowOffset int `json:"rowOffset"`
+}
+
+func (s *Service) ReadCell(ctx context.Context, req ReadCellRequest) (*driver.Cell, error) {
+	if strings.TrimSpace(req.Column) == "" {
+		return nil, fmt.Errorf("no column given")
+	}
+	if req.RowOffset < 0 {
+		return nil, fmt.Errorf("row offset must not be negative")
+	}
+	sess, err := s.session(ctx, req.ConnectionID, req.Ref.Database)
+	if err != nil {
+		return nil, err
+	}
+
+	// Columns are needed for the same reason as in ReadRows: mssql pages with
+	// OFFSET/FETCH and has to invent an ORDER BY, and it must invent the same
+	// one here or the offset points at a different row.
+	cols, err := s.ListColumns(ctx, req.ConnectionID, req.Ref)
+	if err != nil {
+		cols = []driver.Column{}
+	}
+	if len(cols) > 0 && !hasColumn(cols, req.Column) {
+		return nil, fmt.Errorf("no column %q on %s", req.Column, req.Ref.Name)
+	}
+
+	// TextCap is deliberately absent: this call exists to defeat it.
+	query, err := sess.Driver.BuildSelect(req.Ref, driver.ReadOptions{
+		Filter:  req.Filter,
+		OrderBy: req.OrderBy,
+		Select:  []string{req.Column},
+		Limit:   1,
+		Offset:  req.RowOffset,
+	}, cols)
+	if err != nil {
+		return nil, err
+	}
+
+	qctx, done := s.activity.Begin(ctx, req.ConnectionID, req.Ref.Database, activity.KindBrowse, query)
+	defer done()
+	return driver.ReadCell(qctx, sess.DB, query, driver.MaxCellBytes)
+}
+
+func hasColumn(cols []driver.Column, name string) bool {
+	for _, c := range cols {
+		if c.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 type CountRowsRequest struct {
@@ -401,12 +476,19 @@ func (s *Service) RunSQL(ctx context.Context, req RunSQLRequest) (*driver.Result
 	qctx, done := s.activity.Begin(ctx, req.ConnectionID, req.Database, activity.KindQuery, stmt)
 	defer done()
 
+	settings := s.settings.Get()
 	maxRows := req.MaxRows
 	if maxRows <= 0 {
-		maxRows = s.settings.Get().RowCap
+		maxRows = settings.RowCap
 	}
 	if returnsRows(stmt) {
-		return driver.RunQuery(qctx, sess.DB, stmt, maxRows)
+		// The editor's SQL is the user's own text and must not be rewritten,
+		// so the text cap here is applied while scanning. It keeps the grid
+		// responsive; it cannot keep the bytes off the wire.
+		return driver.RunQuery(qctx, sess.DB, stmt, driver.QueryOptions{
+			RowCap:  maxRows,
+			TextCap: settings.TextCapChars,
+		})
 	}
 	return driver.Exec(qctx, sess.DB, stmt)
 }

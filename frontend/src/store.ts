@@ -3,6 +3,7 @@ import { api, errorMessage } from './api'
 import type {
   ActivityResult,
   Capabilities,
+  Cell,
   Column,
   Connection,
   Kind,
@@ -21,12 +22,31 @@ export interface Toast {
   message: string
 }
 
+/** One cell, as the viewer needs to see it. */
+export interface CellTarget {
+  column: string
+  dbType: string
+  value: Cell
+  /** The text cap shortened this value; the whole thing is a fetch away. */
+  truncated: boolean
+  /**
+   * The row's absolute offset in the filtered, sorted result, which is how the
+   * full value is fetched. null when there is nothing to fetch from — an
+   * ad-hoc SQL result has no table to go back to.
+   */
+  rowOffset: number | null
+}
+
 export type DialogState =
   | { kind: 'none' }
   | { kind: 'connection'; connection: Connection | null }
   | { kind: 'shortcuts' }
   | { kind: 'settings' }
   | { kind: 'confirmDelete'; connection: Connection }
+  | { kind: 'cell'; cell: CellTarget }
+
+/** Which grid a cell came from, since only the browse grid can re-read it. */
+export type ResultSource = 'browse' | 'sql'
 
 /** Which pane fills the main area. */
 export type View = 'data' | 'sql' | 'activity'
@@ -39,6 +59,7 @@ export const DEFAULT_SETTINGS: Settings = {
   defaultPageSize: 100,
   paginationEnabled: true,
   rowCap: 100_000,
+  textCapChars: 512,
   showSystemObjects: false,
   autoCount: true,
   confirmDestructive: true,
@@ -114,6 +135,7 @@ interface State {
   deleteConnection: (id: string) => Promise<void>
   setPaletteOpen: (open: boolean) => void
   setDialog: (d: DialogState) => void
+  openCell: (source: ResultSource, rowIndex: number, colIndex: number) => void
   pushToast: (kind: Toast['kind'], message: string) => void
   dismissToast: (id: number) => void
 }
@@ -404,10 +426,17 @@ export const useStore = create<State>((set, get) => {
     },
 
     async saveSettings(next) {
+      const before = get().settings
       try {
         const saved = await api.saveSettings(next)
         set({ settings: saved })
         applyFontSize(saved.fontSizePx)
+        // The cap is applied by the query, so a changed cap only reaches the
+        // grid on the next read. Doing it here saves the user wondering why
+        // the setting appeared to do nothing.
+        if (saved.textCapChars !== before.textCapChars && get().activeRef) {
+          await fetchRows()
+        }
       } catch (e) {
         get().pushToast('error', errorMessage(e))
       }
@@ -487,6 +516,34 @@ export const useStore = create<State>((set, get) => {
 
     setDialog(dialog) {
       set({ dialog })
+    },
+
+    openCell(source, rowIndex, colIndex) {
+      const s = get()
+      const rs = source === 'sql' ? s.sqlResult : s.result
+      if (!rs) return
+      const column = rs.columns[colIndex]
+      const value = rs.rows[rowIndex]?.[colIndex]
+      if (!column || value === undefined) return
+      set({
+        dialog: {
+          kind: 'cell',
+          cell: {
+            column: column.name,
+            dbType: column.dbType,
+            value,
+            truncated: (rs.truncatedCells ?? []).some(
+              (c) => c.row === rowIndex && c.col === colIndex,
+            ),
+            // Page offset plus row index: the same absolute coordinate the
+            // gutter is showing, which is what ReadCell addresses rows by.
+            rowOffset:
+              source === 'browse' && s.activeRef
+                ? (s.paginationEnabled ? (s.page - 1) * s.pageSize : 0) + rowIndex
+                : null,
+          },
+        },
+      })
     },
 
     pushToast(kind, message) {

@@ -13,6 +13,7 @@ const SHORTCUTS: [string, string][] = [
   ['Ctrl+Shift+A', 'Running queries and connections'],
   ['Right-click', 'Connection actions in the sidebar'],
   ['Ctrl+C', 'Copy the selected cell'],
+  ['Enter  /  double-click', 'Open the selected cell (JSON viewer, full value)'],
   ['↑ ↓  /  Ctrl+P  Ctrl+N', 'Move through the palette'],
   ['Esc', 'Close, or revert an unapplied filter'],
 ]

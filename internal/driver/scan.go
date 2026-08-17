@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"math"
 	"strings"
@@ -25,9 +26,30 @@ const maxSafeInteger = int64(1)<<53 - 1
 // binaryPreviewBytes caps how much of a blob is hex-encoded for display.
 const binaryPreviewBytes = 32
 
+// MaxCellBytes bounds a single full-value fetch. The point of that call is to
+// hand over the whole cell, but "whole" has to stop somewhere short of a
+// gigabyte or fetching one row takes the app down.
+const MaxCellBytes = 8 << 20
+
+// QueryOptions bounds what one query is allowed to bring back.
+type QueryOptions struct {
+	// RowCap bounds the number of rows; 0 means HardRowCap.
+	RowCap int
+	// TextCap bounds the characters kept from any string value; 0 disables it.
+	//
+	// A row browse has already asked the server for TextCap+1 characters of
+	// each long column (see selectList), so here that normally only removes
+	// the sentinel character and records that the cell was cut. It is applied
+	// on this side as well because two cases have no server-side cap: ad-hoc
+	// SQL from the editor, whose select list we must not rewrite, and tables
+	// whose column metadata could not be read.
+	TextCap int
+}
+
 // RunQuery executes a query and normalises the result into a JSON-safe
-// ResultSet. rowCap of 0 uses HardRowCap.
-func RunQuery(ctx context.Context, db *sql.DB, query string, rowCap int) (*ResultSet, error) {
+// ResultSet.
+func RunQuery(ctx context.Context, db *sql.DB, query string, opts QueryOptions) (*ResultSet, error) {
+	rowCap := opts.RowCap
 	if rowCap <= 0 || rowCap > HardRowCap {
 		rowCap = HardRowCap
 	}
@@ -49,9 +71,11 @@ func RunQuery(ctx context.Context, db *sql.DB, query string, rowCap int) (*Resul
 	}
 
 	out := &ResultSet{
-		Columns: cols,
-		Rows:    [][]any{},
-		Query:   query,
+		Columns:        cols,
+		Rows:           [][]any{},
+		Query:          query,
+		TextCap:        opts.TextCap,
+		TruncatedCells: []CellRef{},
 	}
 
 	vals := make([]any, len(cols))
@@ -71,6 +95,16 @@ func RunQuery(ctx context.Context, db *sql.DB, query string, rowCap int) (*Resul
 		row := make([]any, len(cols))
 		for i, v := range vals {
 			row[i] = normalise(v, cols[i].DBType)
+			if opts.TextCap <= 0 {
+				continue
+			}
+			if s, ok := row[i].(string); ok {
+				if cut, was := capString(s, opts.TextCap); was {
+					row[i] = cut
+					out.TruncatedCells = append(out.TruncatedCells,
+						CellRef{Row: len(out.Rows), Col: i})
+				}
+			}
 		}
 		out.Rows = append(out.Rows, row)
 	}
@@ -90,16 +124,103 @@ func Exec(ctx context.Context, db *sql.DB, query string) (*ResultSet, error) {
 		return nil, err
 	}
 	out := &ResultSet{
-		Columns:   []ResultColumn{},
-		Rows:      [][]any{},
-		Query:     query,
-		ElapsedMS: time.Since(start).Milliseconds(),
+		Columns:        []ResultColumn{},
+		Rows:           [][]any{},
+		TruncatedCells: []CellRef{},
+		Query:          query,
+		ElapsedMS:      time.Since(start).Milliseconds(),
 	}
 	// Not every driver supports RowsAffected; absence is not an error.
 	if n, err := res.RowsAffected(); err == nil {
 		out.RowsAffected = &n
 	}
 	return out, nil
+}
+
+// Cell is one value read on its own, for the "show me the whole thing" path
+// behind a truncated grid cell.
+type Cell struct {
+	// Value is nil for NULL, which must stay distinguishable from "".
+	Value *string `json:"value"`
+	// Bytes is the size the value had in the database, before any trimming
+	// here, so the viewer can say how big the thing actually is.
+	Bytes int `json:"bytes"`
+	// Truncated is true when even this fetch had to stop — see MaxCellBytes.
+	Truncated bool   `json:"truncated"`
+	Query     string `json:"query"`
+}
+
+// ReadCell runs a query expected to yield exactly one value and returns it
+// whole, subject to maxBytes. maxBytes of 0 uses MaxCellBytes.
+func ReadCell(ctx context.Context, db *sql.DB, query string, maxBytes int) (*Cell, error) {
+	if maxBytes <= 0 || maxBytes > MaxCellBytes {
+		maxBytes = MaxCellBytes
+	}
+	out := &Cell{Query: query}
+
+	var v any
+	if err := db.QueryRowContext(ctx, query).Scan(&v); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			// The row moved or was deleted between the page load and the
+			// click. Saying so beats a bare "no rows in result set".
+			return nil, fmt.Errorf("that row is no longer in the result — refresh and try again")
+		}
+		return nil, err
+	}
+
+	// Normalising here means a full-value fetch shows a decimal, a timestamp
+	// or a blob exactly as the grid does, only untruncated.
+	n := normalise(v, "")
+	if n == nil {
+		return out, nil
+	}
+	s, ok := n.(string)
+	if !ok {
+		s = fmt.Sprintf("%v", n)
+	}
+	out.Bytes = len(s)
+	if b, isBytes := v.([]byte); isBytes {
+		// A blob is reported as a hex preview, so the preview's length is not
+		// the value's length; the raw byte count is.
+		out.Bytes = len(b)
+	}
+	if len(s) > maxBytes {
+		s = truncateBytes(s, maxBytes)
+		out.Truncated = true
+	}
+	out.Value = &s
+	return out, nil
+}
+
+// capString cuts s to n characters, reporting whether anything was removed.
+// Counting runes rather than bytes keeps the cap from splitting a multi-byte
+// character in half, which renders as a replacement glyph in the grid.
+func capString(s string, n int) (string, bool) {
+	// A string of n bytes can hold at most n runes, so this is a cheap and
+	// exact "definitely short enough" test.
+	if len(s) <= n {
+		return s, false
+	}
+	count := 0
+	for i := range s {
+		if count == n {
+			return s[:i], true
+		}
+		count++
+	}
+	return s, false
+}
+
+// truncateBytes cuts s to at most max bytes, backing off to a rune boundary.
+// Byte-bounded rather than rune-bounded because this one guards memory.
+func truncateBytes(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	for max > 0 && !utf8.RuneStart(s[max]) {
+		max--
+	}
+	return s[:max]
 }
 
 // normalise converts a driver value into something that survives JSON and

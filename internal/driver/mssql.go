@@ -74,6 +74,13 @@ func (mssqlDriver) DSN(cfg ConnConfig, database string) (string, error) {
 
 func (mssqlDriver) QuoteIdent(ident string) string { return quoteWith("[", "]", ident) }
 
+// capText casts to nvarchar(max) first: SUBSTRING is not defined on xml, and
+// on the deprecated text/ntext types it returns a differently-typed value. The
+// cast makes every capped column arrive as ordinary unicode text.
+func (mssqlDriver) capText(expr string, n int) string {
+	return fmt.Sprintf("SUBSTRING(CAST(%s AS nvarchar(max)), 1, %d)", expr, n)
+}
+
 func (d mssqlDriver) ListDatabases(ctx context.Context, db *sql.DB) ([]Database, error) {
 	rows, err := db.QueryContext(ctx, `
 		SELECT name FROM sys.databases
@@ -235,7 +242,7 @@ func (d mssqlDriver) target(ref ObjectRef) string {
 // meaning rows could be skipped or repeated as you page through.
 func (d mssqlDriver) BuildSelect(ref ObjectRef, opts ReadOptions, cols []Column) (string, error) {
 	var b strings.Builder
-	b.WriteString("SELECT * FROM " + d.target(ref))
+	b.WriteString("SELECT " + selectList(d, opts, cols) + " FROM " + d.target(ref))
 	b.WriteString(whereClause(opts.Filter))
 
 	paging := opts.Limit > 0 || opts.Offset > 0

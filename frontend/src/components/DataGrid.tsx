@@ -34,13 +34,22 @@ interface Props {
   onSort?: (column: string) => void
   /** Row offset of the first row, so numbering continues across pages. */
   rowOffset?: number
+  /** Opens one cell in the viewer — Enter, or a double-click. */
+  onOpenCell?: (rowIndex: number, colIndex: number) => void
 }
 
 /**
  * Virtualised result grid. Only the visible rows are in the DOM, so a 100k-row
  * result with pagination off stays responsive.
  */
-export function DataGrid({ result, columns, orderBy, onSort, rowOffset = 0 }: Props) {
+export function DataGrid({
+  result,
+  columns,
+  orderBy,
+  onSort,
+  rowOffset = 0,
+  onOpenCell,
+}: Props) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [selected, setSelected] = useState<{ row: number; col: number } | null>(null)
   const rootPx = useStore((s) => s.settings.fontSizePx)
@@ -54,6 +63,13 @@ export function DataGrid({ result, columns, orderBy, onSort, rowOffset = 0 }: Pr
       numeric: isNumericType(rc.dbType, byName.get(rc.name)?.dataType),
     }))
   }, [result.columns, columns])
+
+  // A set keyed on "row:col" — the API sends only the cells that were cut, and
+  // a lookup per rendered cell has to be O(1) or scrolling pays for it.
+  const cutCells = useMemo(
+    () => new Set((result.truncatedCells ?? []).map((c) => `${c.row}:${c.col}`)),
+    [result.truncatedCells],
+  )
 
   // Widths are measured from a sample rather than the whole result: scanning
   // 100k rows to size columns would cost more than rendering them.
@@ -90,20 +106,37 @@ export function DataGrid({ result, columns, orderBy, onSort, rowOffset = 0 }: Pr
     setSelected(null)
   }, [result])
 
-  // Ctrl+C copies the selected cell. Copying what you are looking at is the
-  // single most common thing done with a result grid.
+  // Ctrl+C copies the selected cell, Enter opens it. Copying what you are
+  // looking at is the single most common thing done with a result grid; opening
+  // it is how a capped value, or a JSON document, is read at all.
   useEffect(() => {
-    const onCopy = (e: KeyboardEvent) => {
-      if (!selected || !(e.ctrlKey || e.metaKey) || e.key !== 'c') return
+    const onKey = (e: KeyboardEvent) => {
+      if (!selected) return
+      // A cell stays selected while the user types in the filter box, where
+      // Enter means "apply" and Ctrl+C means "copy what I selected in here".
+      const target = e.target as HTMLElement | null
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement
+      ) {
+        return
+      }
+      if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && onOpenCell) {
+        e.preventDefault()
+        onOpenCell(selected.row, selected.col)
+        return
+      }
+      if (!(e.ctrlKey || e.metaKey) || e.key !== 'c') return
       if (window.getSelection()?.toString()) return // let a text selection win
       const value = result.rows[selected.row]?.[selected.col]
       if (value === undefined) return
       e.preventDefault()
       void navigator.clipboard?.writeText(value === null ? '' : String(value))
     }
-    window.addEventListener('keydown', onCopy)
-    return () => window.removeEventListener('keydown', onCopy)
-  }, [selected, result])
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [selected, result, onOpenCell])
 
   if (result.columns.length === 0) {
     return (
@@ -196,15 +229,23 @@ export function DataGrid({ result, columns, orderBy, onSort, rowOffset = 0 }: Pr
                 {meta.map((m, ci) => {
                   const isSelected = selected?.row === v.index && selected.col === ci
                   const value = row[ci]
+                  const cut = cutCells.has(`${v.index}:${ci}`)
                   return (
                     <div
                       key={ci}
                       onMouseDown={() => setSelected({ row: v.index, col: ci })}
+                      onDoubleClick={() => onOpenCell?.(v.index, ci)}
                       className={`shrink-0 truncate border-r border-[var(--color-border)] px-2 ${
                         m.numeric ? 'text-right' : ''
                       } ${isSelected ? 'bg-[var(--color-accent-dim)]/60 ring-1 ring-[var(--color-accent)] ring-inset' : ''}`}
                       style={{ width: widths[ci], lineHeight: `${gm.rowHeight}px` }}
-                      title={value === null ? 'NULL' : String(value)}
+                      title={
+                        value === null
+                          ? 'NULL'
+                          : cut
+                            ? `${String(value)}\n\n(cut to ${result.textCap} characters — Enter for the whole value)`
+                            : String(value)
+                      }
                     >
                       {value === null ? (
                         // NULL and '' must never look the same — telling them
@@ -214,6 +255,19 @@ export function DataGrid({ result, columns, orderBy, onSort, rowOffset = 0 }: Pr
                         <span className="text-[var(--color-faint)] italic">empty</span>
                       ) : typeof value === 'boolean' ? (
                         <span className="text-[var(--color-warn)]">{String(value)}</span>
+                      ) : cut ? (
+                        // Truncation must be visible in the cell, not only in
+                        // the tooltip: a value that was cut but looks whole is
+                        // worse than no value at all. The badge is pinned to
+                        // the right of the cell and the text truncates before
+                        // it, or the marker would be the first thing scrolled
+                        // out of sight — capped values always overflow.
+                        <span className="flex min-w-0 items-center gap-1">
+                          <span className="truncate">{String(value)}</span>
+                          <span className="shrink-0 rounded-sm bg-[var(--color-warn)]/20 px-1 text-[0.5625rem] font-semibold text-[var(--color-warn)]">
+                            CUT
+                          </span>
+                        </span>
                       ) : (
                         String(value)
                       )}

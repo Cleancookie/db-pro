@@ -66,12 +66,33 @@ export interface ResultColumn {
 /** Cell values are limited to these by internal/driver/scan.go. */
 export type Cell = string | number | boolean | null
 
+/** One cell's position in a ResultSet. */
+export interface CellRef {
+  row: number
+  col: number
+}
+
 export interface ResultSet {
   columns: ResultColumn[]
   rows: Cell[][]
   truncated: boolean
+  /** Character cap applied to long values; 0 means none was. */
+  textCap: number
+  /** The cells the cap shortened — the grid marks these rather than lying. */
+  truncatedCells: CellRef[]
   elapsedMs: number
   rowsAffected?: number
+  query: string
+}
+
+/** One value fetched on its own, in full — see api.readCell. */
+export interface CellValue {
+  /** null for NULL, which is not the same as an empty string. */
+  value: string | null
+  /** Size in the database, before any trimming. */
+  bytes: number
+  /** True when even the full fetch had to stop (8 MiB). */
+  truncated: boolean
   query: string
 }
 
@@ -106,6 +127,8 @@ export interface Settings {
   defaultPageSize: number
   paginationEnabled: boolean
   rowCap: number
+  /** Characters kept from long text/JSON columns; 0 disables the cap. */
+  textCapChars: number
   showSystemObjects: boolean
   autoCount: boolean
   confirmDestructive: boolean

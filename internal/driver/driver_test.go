@@ -199,6 +199,135 @@ func TestBuildCountUsesSameFilter(t *testing.T) {
 	}
 }
 
+// --- the text cap ------------------------------------------------------------------
+
+// longCols is a table with one column of each shape the cap has to reason
+// about: a key, a bounded string, and two that can hold a megabyte.
+var longCols = []Column{
+	{Name: "id", DataType: "integer", PrimaryKey: true},
+	{Name: "name", DataType: "varchar(64)"},
+	{Name: "body", DataType: "text"},
+	{Name: "doc", DataType: "json"},
+}
+
+// The cap has to be in the SQL, not applied after the fetch — that is the whole
+// point of it. Each dialect's substring is pinned, because getting one wrong
+// means either a database error or megabytes silently crossing the wire.
+func TestTextCapIsEmittedAsSQL(t *testing.T) {
+	ref := ObjectRef{Database: "shop", Schema: "public", Name: "docs"}
+	opts := ReadOptions{TextCap: 512}
+
+	cases := []struct {
+		kind Kind
+		want string
+	}{
+		{KindMySQL, "SELECT `id`, `name`, LEFT(`body`, 513) AS `body`, LEFT(`doc`, 513) AS `doc` " +
+			"FROM `shop`.`docs`"},
+		{KindPostgres, `SELECT "id", "name", left("body"::text, 513) AS "body", ` +
+			`left("doc"::text, 513) AS "doc" FROM "public"."docs"`},
+		{KindSQLite, `SELECT "id", "name", substr("body", 1, 513) AS "body", ` +
+			`substr("doc", 1, 513) AS "doc" FROM "docs"`},
+		{KindMSSQL, "SELECT [id], [name], SUBSTRING(CAST([body] AS nvarchar(max)), 1, 513) AS [body], " +
+			"SUBSTRING(CAST([doc] AS nvarchar(max)), 1, 513) AS [doc] FROM [shop].[public].[docs]"},
+	}
+	for _, c := range cases {
+		got, err := mustGet(t, c.kind).BuildSelect(ref, opts, longCols)
+		if err != nil {
+			t.Fatalf("%s: %v", c.kind, err)
+		}
+		if got != c.want {
+			t.Errorf("%s:\n got %q\nwant %q", c.kind, got, c.want)
+		}
+	}
+}
+
+// One character past the cap is what tells the scan the value was cut. Losing
+// it would make truncation invisible, which is the failure this feature exists
+// to avoid.
+func TestTextCapAsksForOneCharacterPastTheCap(t *testing.T) {
+	got, _ := mustGet(t, KindSQLite).BuildSelect(ObjectRef{Name: "docs"},
+		ReadOptions{TextCap: 100}, longCols)
+	if !strings.Contains(got, "substr(\"body\", 1, 101)") {
+		t.Errorf("sentinel character missing: %q", got)
+	}
+}
+
+// With nothing to cap the query must be byte-for-byte what it was before the
+// cap existed — an explicit column list would quietly change what a SELECT *
+// returns after an ALTER TABLE.
+func TestNothingToCapKeepsSelectStar(t *testing.T) {
+	d := mustGet(t, KindSQLite)
+	ref := ObjectRef{Name: "docs"}
+	cases := map[string]struct {
+		opts ReadOptions
+		cols []Column
+	}{
+		"cap disabled":       {ReadOptions{TextCap: 0}, longCols},
+		"no column metadata": {ReadOptions{TextCap: 512}, nil},
+		"no long columns": {ReadOptions{TextCap: 512}, []Column{
+			{Name: "id", DataType: "integer"}, {Name: "name", DataType: "varchar(10)"},
+		}},
+	}
+	for name, c := range cases {
+		got, _ := d.BuildSelect(ref, c.opts, c.cols)
+		if got != `SELECT * FROM "docs"` {
+			t.Errorf("%s: got %q, want a plain SELECT *", name, got)
+		}
+	}
+}
+
+// The single-cell fetch projects one column and must not cap it — defeating the
+// cap is its entire purpose. The column name is an identifier and is quoted.
+func TestSelectOverrideProjectsOneUncappedColumn(t *testing.T) {
+	got, _ := mustGet(t, KindPostgres).BuildSelect(
+		ObjectRef{Schema: "public", Name: "docs"},
+		ReadOptions{Select: []string{`we"ird`}, TextCap: 512, Limit: 1, Offset: 41},
+		longCols)
+	want := `SELECT "we""ird" FROM "public"."docs" LIMIT 1 OFFSET 41`
+	if got != want {
+		t.Errorf("\n got %q\nwant %q", got, want)
+	}
+}
+
+// The cell fetch pages with LIMIT 1 / OFFSET n, so mssql still has to invent
+// the same ORDER BY the page was read with or it addresses a different row.
+func TestSelectOverrideStillOrdersForMSSQL(t *testing.T) {
+	got, _ := mustGet(t, KindMSSQL).BuildSelect(
+		ObjectRef{Database: "shop", Schema: "dbo", Name: "docs"},
+		ReadOptions{Select: []string{"body"}, Limit: 1, Offset: 7}, longCols)
+	want := "SELECT [body] FROM [shop].[dbo].[docs] ORDER BY [id] " +
+		"OFFSET 7 ROWS FETCH NEXT 1 ROWS ONLY"
+	if got != want {
+		t.Errorf("\n got %q\nwant %q", got, want)
+	}
+}
+
+// Capping rewrites the select list, which is the one place the filter and the
+// projection meet. The filter must still be the only raw fragment.
+func TestTextCapKeepsIdentifiersQuoted(t *testing.T) {
+	got, _ := mustGet(t, KindMySQL).BuildSelect(ObjectRef{Database: "db", Name: "t"},
+		ReadOptions{TextCap: 8, Filter: "1=1"},
+		[]Column{{Name: "we`ird", DataType: "longtext"}})
+	if !strings.Contains(got, "LEFT(`we``ird`, 9) AS `we``ird`") {
+		t.Errorf("identifier not escaped in the capped select list: %q", got)
+	}
+}
+
+func TestCapStringCutsOnRuneBoundaries(t *testing.T) {
+	// Four characters, eight bytes.
+	const s = "αβγδ"
+	got, cut := capString(s, 2)
+	if !cut || got != "αβ" {
+		t.Errorf("capString(%q, 2) = (%q, %v), want (\"αβ\", true)", s, got, cut)
+	}
+	if got, cut := capString(s, 4); cut || got != s {
+		t.Errorf("a string exactly at the cap must be left alone, got (%q, %v)", got, cut)
+	}
+	if got, cut := capString("abc", 10); cut || got != "abc" {
+		t.Errorf("short string was touched: (%q, %v)", got, cut)
+	}
+}
+
 func TestAllKindsRegistered(t *testing.T) {
 	want := []Kind{KindMSSQL, KindMySQL, KindPostgres, KindSQLite}
 	got := Kinds()

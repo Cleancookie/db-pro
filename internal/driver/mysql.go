@@ -67,6 +67,12 @@ func (mysqlDriver) DSN(cfg ConnConfig, database string) (string, error) {
 
 func (mysqlDriver) QuoteIdent(ident string) string { return quoteWith("`", "`", ident) }
 
+// capText uses LEFT, which counts characters rather than bytes and coerces a
+// JSON column to text on the way — the two things the cap needs.
+func (mysqlDriver) capText(expr string, n int) string {
+	return fmt.Sprintf("LEFT(%s, %d)", expr, n)
+}
+
 func (d mysqlDriver) ListDatabases(ctx context.Context, db *sql.DB) ([]Database, error) {
 	rows, err := db.QueryContext(ctx,
 		`SELECT schema_name FROM information_schema.schemata ORDER BY schema_name`)
@@ -194,8 +200,8 @@ func (d mysqlDriver) target(ref ObjectRef) string {
 	return qualify(d, ref.Database, ref.Name)
 }
 
-func (d mysqlDriver) BuildSelect(ref ObjectRef, opts ReadOptions, _ []Column) (string, error) {
-	return buildStandardSelect(d, ref, opts, d.target(ref)), nil
+func (d mysqlDriver) BuildSelect(ref ObjectRef, opts ReadOptions, cols []Column) (string, error) {
+	return buildStandardSelect(d, ref, opts, d.target(ref), cols), nil
 }
 
 func (d mysqlDriver) BuildCount(ref ObjectRef, filter string) string {

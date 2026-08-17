@@ -8,6 +8,7 @@
 import type {
   ActivityResult,
   Capabilities,
+  CellValue,
   Column,
   Connection,
   ConnectResult,
@@ -115,6 +116,21 @@ export const api = {
     orderBy: Sort[]
     pagination: Pagination
   }) => call<ReadRowsResult>('ReadRows', [req], req),
+
+  /**
+   * One cell in full, bypassing the text cap. The row is addressed by its
+   * absolute offset in the same filtered, sorted result the grid is showing,
+   * so the filter and sort passed here must be the ones the page was read
+   * with.
+   */
+  readCell: (req: {
+    connectionId: string
+    ref: ObjectRef
+    column: string
+    filter: string
+    orderBy: Sort[]
+    rowOffset: number
+  }) => call<CellValue>('ReadCell', [req], req),
 
   countRows: (req: { connectionId: string; ref: ObjectRef; filter: string }) =>
     call<number>('CountRows', [req], req),
