@@ -1,8 +1,10 @@
 import { create } from 'zustand'
 import { api, errorMessage } from './api'
+import { absoluteRowOffset, cellText, isCellTruncated } from './cells'
 import type {
   ActivityResult,
   Capabilities,
+  Cell,
   Column,
   Connection,
   Kind,
@@ -21,12 +23,31 @@ export interface Toast {
   message: string
 }
 
+/** One cell, as the viewer needs to see it. */
+export interface CellTarget {
+  column: string
+  dbType: string
+  value: Cell
+  /** The text cap shortened this value; the whole thing is a fetch away. */
+  truncated: boolean
+  /**
+   * The row's absolute offset in the filtered, sorted result, which is how the
+   * full value is fetched. null when there is nothing to fetch from — an
+   * ad-hoc SQL result has no table to go back to.
+   */
+  rowOffset: number | null
+}
+
 export type DialogState =
   | { kind: 'none' }
   | { kind: 'connection'; connection: Connection | null }
   | { kind: 'shortcuts' }
   | { kind: 'settings' }
   | { kind: 'confirmDelete'; connection: Connection }
+  | { kind: 'cell'; cell: CellTarget }
+
+/** Which grid a cell came from, since only the browse grid can re-read it. */
+export type ResultSource = 'browse' | 'sql'
 
 /** Which pane fills the main area. */
 export type View = 'data' | 'sql' | 'activity'
@@ -39,6 +60,7 @@ export const DEFAULT_SETTINGS: Settings = {
   defaultPageSize: 100,
   paginationEnabled: true,
   rowCap: 100_000,
+  textCapChars: 1024,
   showSystemObjects: false,
   autoCount: true,
   confirmDestructive: true,
@@ -114,6 +136,17 @@ interface State {
   deleteConnection: (id: string) => Promise<void>
   setPaletteOpen: (open: boolean) => void
   setDialog: (d: DialogState) => void
+  /** Resolves a grid coordinate to a cell, or null if there is nothing there. */
+  cellTarget: (source: ResultSource, rowIndex: number, colIndex: number) => CellTarget | null
+  openCell: (source: ResultSource, rowIndex: number, colIndex: number) => void
+  /** Copies a cell; `full` re-reads it uncapped first. */
+  copyCell: (
+    source: ResultSource,
+    rowIndex: number,
+    colIndex: number,
+    full?: boolean,
+  ) => Promise<void>
+  copyText: (text: string) => Promise<void>
   pushToast: (kind: Toast['kind'], message: string) => void
   dismissToast: (id: number) => void
 }
@@ -404,10 +437,17 @@ export const useStore = create<State>((set, get) => {
     },
 
     async saveSettings(next) {
+      const before = get().settings
       try {
         const saved = await api.saveSettings(next)
         set({ settings: saved })
         applyFontSize(saved.fontSizePx)
+        // The cap is applied by the query, so a changed cap only reaches the
+        // grid on the next read. Doing it here saves the user wondering why
+        // the setting appeared to do nothing.
+        if (saved.textCapChars !== before.textCapChars && get().activeRef) {
+          await fetchRows()
+        }
       } catch (e) {
         get().pushToast('error', errorMessage(e))
       }
@@ -487,6 +527,74 @@ export const useStore = create<State>((set, get) => {
 
     setDialog(dialog) {
       set({ dialog })
+    },
+
+    cellTarget(source, rowIndex, colIndex) {
+      const s = get()
+      const rs = source === 'sql' ? s.sqlResult : s.result
+      if (!rs) return null
+      const column = rs.columns[colIndex]
+      const value = rs.rows[rowIndex]?.[colIndex]
+      if (!column || value === undefined) return null
+      return {
+        column: column.name,
+        dbType: column.dbType,
+        value,
+        truncated: isCellTruncated(rs, rowIndex, colIndex),
+        // The same absolute coordinate the row gutter is showing, which is what
+        // ReadCell addresses rows by.
+        rowOffset:
+          source === 'browse' && s.activeRef
+            ? absoluteRowOffset(rowIndex, {
+                enabled: s.paginationEnabled,
+                page: s.page,
+                pageSize: s.pageSize,
+              })
+            : null,
+      }
+    },
+
+    openCell(source, rowIndex, colIndex) {
+      const cell = get().cellTarget(source, rowIndex, colIndex)
+      if (cell) set({ dialog: { kind: 'cell', cell } })
+    },
+
+    async copyCell(source, rowIndex, colIndex, full = false) {
+      const s = get()
+      const cell = s.cellTarget(source, rowIndex, colIndex)
+      if (!cell) return
+      let text = cellText(cell.value)
+
+      // Only worth a round trip when there is more to get: an untruncated cell
+      // is already whole in the grid.
+      if (full && cell.truncated && cell.rowOffset !== null && s.activeConnectionId && s.activeRef) {
+        try {
+          const res = await api.readCell({
+            connectionId: s.activeConnectionId,
+            ref: s.activeRef,
+            column: cell.column,
+            filter: s.filter,
+            orderBy: s.orderBy,
+            rowOffset: cell.rowOffset,
+          })
+          text = res.value ?? ''
+        } catch (e) {
+          s.pushToast('error', errorMessage(e))
+          return
+        }
+      }
+
+      await s.copyText(text)
+    },
+
+    async copyText(text) {
+      try {
+        await navigator.clipboard.writeText(text)
+      } catch {
+        // Clipboard access can be refused. Silence would look exactly like a
+        // menu item that does nothing.
+        get().pushToast('error', 'Could not write to the clipboard')
+      }
     },
 
     pushToast(kind, message) {

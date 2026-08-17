@@ -1,3 +1,4 @@
+import { Fragment } from 'react'
 import * as RadixContextMenu from '@radix-ui/react-context-menu'
 
 /**
@@ -15,6 +16,8 @@ export interface MenuItem {
   onSelect: () => void
   disabled?: boolean
   danger?: boolean
+  /** Draws a divider above this item, for grouping unrelated actions. */
+  separatorBefore?: boolean
 }
 
 export interface ContextMenuProps {
@@ -44,16 +47,20 @@ export function ContextMenu({ items, heading, children, className }: ContextMenu
             </RadixContextMenu.Label>
           )}
           {items.map((item) => (
-            <RadixContextMenu.Item
-              key={item.label}
-              disabled={item.disabled}
-              onSelect={item.onSelect}
-              className={`block cursor-default px-3 py-1.5 outline-none select-none data-[disabled]:opacity-35 data-[highlighted]:bg-[var(--color-accent-dim)]/45 ${
-                item.danger ? 'text-[var(--color-danger)]' : ''
-              }`}
-            >
-              {item.label}
-            </RadixContextMenu.Item>
+            <Fragment key={item.label}>
+              {item.separatorBefore && (
+                <RadixContextMenu.Separator className="my-1 h-px bg-[var(--color-border)]" />
+              )}
+              <RadixContextMenu.Item
+                disabled={item.disabled}
+                onSelect={item.onSelect}
+                className={`block cursor-default px-3 py-1.5 outline-none select-none data-[disabled]:opacity-35 data-[highlighted]:bg-[var(--color-accent-dim)]/45 ${
+                  item.danger ? 'text-[var(--color-danger)]' : ''
+                }`}
+              >
+                {item.label}
+              </RadixContextMenu.Item>
+            </Fragment>
           ))}
         </RadixContextMenu.Content>
       </RadixContextMenu.Portal>

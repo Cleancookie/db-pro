@@ -20,6 +20,8 @@ MVP walking skeleton. Working end-to-end:
 - Browse rows of a table or view
 - `Ctrl+F` raw-SQL filter — whatever you type is appended after `WHERE`
 - Pagination: page size, page number, or switched off entirely
+- Long text/JSON columns capped by the *database*, marked in the grid, and openable
+  in full — with a collapsible JSON viewer (`Enter` on a cell)
 - SQL editor with a results grid (plain textarea for now, Monaco is a follow-up)
 
 ## Keybindings
@@ -32,6 +34,8 @@ MVP walking skeleton. Working end-to-end:
 | `Ctrl+Enter` | Run query (in SQL editor) |
 | `Ctrl+R` | Refresh current result set |
 | `Ctrl+←` / `Ctrl+→` | Previous / next page |
+| `Enter` | Open the selected cell (full value, JSON tree) |
+| Right-click / `Menu` | Cell actions — open in viewer, copy value, copy full value |
 | `Esc` | Close palette / dialog, or blur the filter |
 
 ## Running it

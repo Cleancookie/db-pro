@@ -133,6 +133,23 @@ export function SettingsDialog() {
               />
             }
           />
+          <Row
+            label="Long value cap"
+            hint="Characters kept from text, JSON and similar columns. Cut by the database, so the rest never crosses the wire; open a cell to read it in full. 0 turns the cap off."
+            control={
+              <input
+                type="number"
+                min={0}
+                max={1_000_000}
+                // As with the row cap: a numeric step would make any value off
+                // the multiple silently block the whole dialog from saving.
+                step="any"
+                value={draft.textCapChars}
+                onChange={(e) => patch({ textCapChars: Number(e.target.value) })}
+                className={`${selectClass} w-28 text-right`}
+              />
+            }
+          />
         </Group>
 
         <Group label="Catalogue">

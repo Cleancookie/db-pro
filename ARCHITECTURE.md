@@ -148,3 +148,40 @@ normalises everything to a small JSON-safe set — string, number, bool, null �
 records the database's own type name per column separately, so the grid can render a
 `NULL` distinctly from an empty string. Binary columns are reported as `\x…` hex with
 a byte count rather than shipped to the frontend in full.
+
+## Long values
+
+Text-shaped columns — `text`, `longtext`, `json`, `jsonb`, `nvarchar(max)`, … — are
+capped to `textCapChars` (Settings, 1024 by default — roughly the 1 kB DBeaver uses;
+0 turns it off). Two layers, and
+the first is the one that matters:
+
+1. **In the emitted SQL.** `BuildSelect` replaces `SELECT *` with an explicit column
+   list in which long columns are wrapped in the dialect's substring — `LEFT()` in
+   MySQL, `left(…::text, n)` in postgres, `SUBSTRING(CAST(… AS nvarchar(max)), 1, n)`
+   in SQL Server, `substr()` in SQLite. The server does the cutting, so the megabytes
+   never cross the wire. The substring is the one SQL fragment a dialect has to hand
+   back, and it goes through the unexported `textCapper` interface rather than
+   `Driver`, which stays introspection-shaped.
+
+   Which columns qualify is decided by `isLongTextType` from the introspected type
+   name *and the cap in force*: a `varchar(64)` cannot exceed a cap of 1024, so it is
+   left alone and the list collapses back to `SELECT *` when nothing qualifies.
+   Without column metadata — a view that cannot be introspected — there is nothing to
+   rewrite and only layer 2 applies.
+
+2. **While scanning** (`RunQuery`, `QueryOptions.TextCap`). The query asks for
+   `cap + 1` characters; that extra character is what tells the scan the value was
+   cut, with no second query and no `length()` column per row. The scan trims it and
+   records the position in `ResultSet.TruncatedCells`, which the grid marks with a
+   `CUT` badge. This layer also covers ad-hoc SQL from the editor, whose statement
+   must not be rewritten.
+
+`ReadCell` is the escape hatch: one column of one row, uncapped, bounded by
+`MaxCellBytes` (8 MiB). The row is addressed by its absolute offset in the same
+filtered, sorted result the grid is showing rather than by primary key, so it works
+on a view and on a table with no key — at the cost that on a table being written to
+concurrently the offset may have moved. The cell viewer
+(`frontend/src/components/CellDialog.tsx`) fetches it on open and renders JSON —
+whether the column is `json`/`jsonb` or merely a text column holding some — as a
+collapsible tree (`JsonView.tsx`, hand-rolled; see `frontend/src/ui/README.md`).

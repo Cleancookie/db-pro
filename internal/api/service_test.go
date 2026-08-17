@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/alexlaw/db-pro/internal/activity"
@@ -367,6 +368,267 @@ func TestReturnsRowsClassifier(t *testing.T) {
 		if returnsRows(s) {
 			t.Errorf("%q was misclassified as a query", s)
 		}
+	}
+}
+
+// --- the text cap and the full-value fetch -----------------------------------------
+
+// seedDocs makes a table with one long text column and one JSON column, each
+// holding far more than any sane cap.
+func seedDocs(t *testing.T, svc *Service, id string, size int) {
+	t.Helper()
+	mustRun(t, svc, id, `CREATE TABLE docs (
+		id INTEGER PRIMARY KEY,
+		name VARCHAR(64),
+		body TEXT,
+		doc JSON
+	)`)
+	body := strings.Repeat("x", size)
+	for i := 1; i <= 3; i++ {
+		mustRun(t, svc, id, fmt.Sprintf(
+			`INSERT INTO docs (id, name, body, doc) VALUES (%d, 'doc-%d', '%s', '{"n":%d,"pad":"%s"}')`,
+			i, i, body, i, body))
+	}
+}
+
+func setTextCap(t *testing.T, svc *Service, n int) {
+	t.Helper()
+	s := svc.GetSettings()
+	s.TextCapChars = n
+	if _, err := svc.SaveSettings(s); err != nil {
+		t.Fatalf("saving settings: %v", err)
+	}
+}
+
+// The cap must be applied by the database, not after the fetch — otherwise the
+// megabytes have already crossed the wire and only the rendering is saved.
+func TestLongValuesAreCappedInTheEmittedSQL(t *testing.T) {
+	svc, id := newTestService(t)
+	seedDocs(t, svc, id, 5000)
+	setTextCap(t, svc, 64)
+
+	res, err := svc.ReadRows(context.Background(), ReadRowsRequest{
+		ConnectionID: id,
+		Ref:          driver.ObjectRef{Database: "main", Name: "docs"},
+		OrderBy:      []driver.Sort{{Column: "id"}},
+		Pagination:   Pagination{Enabled: false},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(res.Result.Query, `substr("body", 1, 65)`) {
+		t.Errorf("the cap is not in the query: %q", res.Result.Query)
+	}
+	if strings.Contains(res.Result.Query, `substr("name"`) {
+		t.Errorf("a varchar(64) was capped needlessly: %q", res.Result.Query)
+	}
+	for _, col := range []int{2, 3} {
+		got, ok := res.Result.Rows[0][col].(string)
+		if !ok {
+			t.Fatalf("column %d came back as %T", col, res.Result.Rows[0][col])
+		}
+		if len(got) != 64 {
+			t.Errorf("column %d is %d characters, want the 64 it was capped to", col, len(got))
+		}
+	}
+	// Short columns must be untouched, and every cut cell must be reported.
+	if res.Result.Rows[0][1] != "doc-1" {
+		t.Errorf("short value was altered: %#v", res.Result.Rows[0][1])
+	}
+	if res.Result.TextCap != 64 {
+		t.Errorf("TextCap reported as %d, want 64", res.Result.TextCap)
+	}
+	if len(res.Result.TruncatedCells) != 6 {
+		t.Errorf("got %d truncated cells, want 6 (two columns × three rows): %v",
+			len(res.Result.TruncatedCells), res.Result.TruncatedCells)
+	}
+}
+
+// Truncation that the grid cannot see is worse than no truncation at all: the
+// user would read a cut value as the whole one.
+func TestTruncationIsReportedPerCell(t *testing.T) {
+	svc, id := newTestService(t)
+	seedDocs(t, svc, id, 5000)
+	setTextCap(t, svc, 64)
+	// A value shorter than the cap must not be flagged.
+	mustRun(t, svc, id, `INSERT INTO docs (id, name, body, doc) VALUES (9, 'short', 'tiny', '{}')`)
+
+	res, err := svc.ReadRows(context.Background(), ReadRowsRequest{
+		ConnectionID: id,
+		Ref:          driver.ObjectRef{Database: "main", Name: "docs"},
+		Filter:       "id = 9",
+		Pagination:   Pagination{Enabled: false},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Result.TruncatedCells) != 0 {
+		t.Errorf("short values were flagged as truncated: %v", res.Result.TruncatedCells)
+	}
+}
+
+func TestTextCapOfZeroLeavesValuesWhole(t *testing.T) {
+	svc, id := newTestService(t)
+	seedDocs(t, svc, id, 5000)
+	setTextCap(t, svc, 0)
+
+	res, err := svc.ReadRows(context.Background(), ReadRowsRequest{
+		ConnectionID: id,
+		Ref:          driver.ObjectRef{Database: "main", Name: "docs"},
+		Pagination:   Pagination{Enabled: false},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(res.Result.Query, "substr") {
+		t.Errorf("cap disabled but still emitted: %q", res.Result.Query)
+	}
+	if got := res.Result.Rows[0][2].(string); len(got) != 5000 {
+		t.Errorf("got %d characters, want the whole 5000", len(got))
+	}
+}
+
+// The editor's SQL must not be rewritten, so there the cap is applied while
+// scanning. The rows still have to arrive capped and flagged.
+func TestAdHocSQLIsCappedWhileScanning(t *testing.T) {
+	svc, id := newTestService(t)
+	seedDocs(t, svc, id, 5000)
+	setTextCap(t, svc, 32)
+
+	res, err := svc.RunSQL(context.Background(), RunSQLRequest{
+		ConnectionID: id, SQL: "SELECT body FROM docs ORDER BY id",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Query != "SELECT body FROM docs ORDER BY id" {
+		t.Errorf("the user's statement was rewritten: %q", res.Query)
+	}
+	if got := res.Rows[0][0].(string); len(got) != 32 {
+		t.Errorf("got %d characters, want 32", len(got))
+	}
+	if len(res.TruncatedCells) != 3 {
+		t.Errorf("got %d truncated cells, want 3", len(res.TruncatedCells))
+	}
+}
+
+// The cap is only bearable because a single cell can still be had in full.
+func TestReadCellReturnsTheWholeValue(t *testing.T) {
+	svc, id := newTestService(t)
+	seedDocs(t, svc, id, 5000)
+	setTextCap(t, svc, 64)
+	ref := driver.ObjectRef{Database: "main", Name: "docs"}
+
+	cell, err := svc.ReadCell(context.Background(), ReadCellRequest{
+		ConnectionID: id, Ref: ref, Column: "body",
+		OrderBy: []driver.Sort{{Column: "id"}}, RowOffset: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cell.Value == nil {
+		t.Fatal("value is NULL, want 5000 characters")
+	}
+	if len(*cell.Value) != 5000 {
+		t.Errorf("got %d characters, want the whole 5000", len(*cell.Value))
+	}
+	if cell.Bytes != 5000 {
+		t.Errorf("Bytes = %d, want 5000", cell.Bytes)
+	}
+	if cell.Truncated {
+		t.Error("a 5000-character value should not hit MaxCellBytes")
+	}
+}
+
+// The offset is in the coordinates of the filtered, sorted result the grid is
+// showing. Fetching the wrong row would hand the user someone else's data.
+func TestReadCellHonoursFilterAndSort(t *testing.T) {
+	svc, id := newTestService(t)
+	seedDocs(t, svc, id, 10)
+	ref := driver.ObjectRef{Database: "main", Name: "docs"}
+
+	cell, err := svc.ReadCell(context.Background(), ReadCellRequest{
+		ConnectionID: id, Ref: ref, Column: "name",
+		Filter: "id > 1", OrderBy: []driver.Sort{{Column: "id", Desc: true}},
+		RowOffset: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// id > 1 descending is [3, 2]; offset 1 is id 2.
+	if cell.Value == nil || *cell.Value != "doc-2" {
+		t.Errorf("got %v, want doc-2", cell.Value)
+	}
+}
+
+// NULL and "" have to stay apart here as much as they do in the grid.
+func TestReadCellDistinguishesNullFromEmpty(t *testing.T) {
+	svc, id := newTestService(t)
+	seedDocs(t, svc, id, 10)
+	mustRun(t, svc, id, `INSERT INTO docs (id, name, body) VALUES (10, '', NULL)`)
+	ref := driver.ObjectRef{Database: "main", Name: "docs"}
+
+	null, err := svc.ReadCell(context.Background(), ReadCellRequest{
+		ConnectionID: id, Ref: ref, Column: "body",
+		OrderBy: []driver.Sort{{Column: "id"}}, RowOffset: 3,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if null.Value != nil {
+		t.Errorf("NULL came back as %#v", *null.Value)
+	}
+
+	empty, err := svc.ReadCell(context.Background(), ReadCellRequest{
+		ConnectionID: id, Ref: ref, Column: "name",
+		OrderBy: []driver.Sort{{Column: "id"}}, RowOffset: 3,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if empty.Value == nil || *empty.Value != "" {
+		t.Errorf("empty string came back as %v", empty.Value)
+	}
+}
+
+func TestReadCellRejectsAnUnknownColumn(t *testing.T) {
+	svc, id := newTestService(t)
+	seedDocs(t, svc, id, 10)
+
+	_, err := svc.ReadCell(context.Background(), ReadCellRequest{
+		ConnectionID: id,
+		Ref:          driver.ObjectRef{Database: "main", Name: "docs"},
+		Column:       "body; drop table docs",
+		RowOffset:    0,
+	})
+	if err == nil {
+		t.Fatal("expected an error for a column that does not exist")
+	}
+	// And the table is still there — the name was never interpolated raw.
+	if _, err := svc.RunSQL(context.Background(), RunSQLRequest{
+		ConnectionID: id, SQL: "SELECT count(*) FROM docs",
+	}); err != nil {
+		t.Fatalf("docs is gone: %v", err)
+	}
+}
+
+// A row that has moved on is normal on a live table; the message has to say so
+// rather than leaking "sql: no rows in result set".
+func TestReadCellPastTheEndExplainsItself(t *testing.T) {
+	svc, id := newTestService(t)
+	seedDocs(t, svc, id, 10)
+
+	_, err := svc.ReadCell(context.Background(), ReadCellRequest{
+		ConnectionID: id,
+		Ref:          driver.ObjectRef{Database: "main", Name: "docs"},
+		Column:       "body",
+		RowOffset:    999,
+	})
+	if err == nil {
+		t.Fatal("expected an error past the end of the result")
+	}
+	if strings.Contains(err.Error(), "sql: no rows") {
+		t.Errorf("raw driver error surfaced: %v", err)
 	}
 }
 

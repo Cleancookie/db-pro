@@ -112,6 +112,16 @@ type ReadOptions struct {
 	// still applies a hard row cap so this cannot exhaust memory.
 	Limit  int `json:"limit"`
 	Offset int `json:"offset"`
+	// TextCap cuts long text-shaped columns to this many characters in the
+	// emitted SQL, so a table of megabyte JSON documents does not put
+	// megabytes on the wire. 0 disables it. The cap needs cols to know which
+	// columns can exceed it; with no column metadata the query is left alone
+	// and only the scan-side cap in scan.go applies.
+	TextCap int `json:"textCap"`
+	// Select restricts the projection to these columns instead of SELECT *.
+	// The single-cell fetch uses it to ask for one uncapped column of one row.
+	// Names are quoted per dialect, never interpolated raw.
+	Select []string `json:"select"`
 }
 
 type ResultColumn struct {
@@ -121,13 +131,26 @@ type ResultColumn struct {
 	DBType string `json:"dbType"`
 }
 
+// CellRef locates one cell within a ResultSet by its row and column index.
+type CellRef struct {
+	Row int `json:"row"`
+	Col int `json:"col"`
+}
+
 // ResultSet is a page of rows in a JSON-safe form. Values are limited to
 // string, float64, bool and nil — see scan.go.
 type ResultSet struct {
 	Columns   []ResultColumn `json:"columns"`
 	Rows      [][]any        `json:"rows"`
 	Truncated bool           `json:"truncated"` // hard row cap trimmed the result
-	ElapsedMS int64          `json:"elapsedMs"`
+	// TextCap is the character cap that was in force, so the UI can say what
+	// a cut cell was cut to. 0 means no cap was applied.
+	TextCap int `json:"textCap"`
+	// TruncatedCells lists the cells the cap shortened. Truncation has to be
+	// visible in the grid rather than silent, and a sparse list costs nothing
+	// on the usual result where nothing was cut.
+	TruncatedCells []CellRef `json:"truncatedCells"`
+	ElapsedMS      int64     `json:"elapsedMs"`
 	// RowsAffected is set for statements that are not queries (INSERT/UPDATE…).
 	RowsAffected *int64 `json:"rowsAffected,omitempty"`
 	Query        string `json:"query"` // the SQL actually executed, for the UI
@@ -158,6 +181,19 @@ type Driver interface {
 	// that need a deterministic sort for pagination (mssql) can pick one.
 	BuildSelect(ref ObjectRef, opts ReadOptions, cols []Column) (string, error)
 	BuildCount(ref ObjectRef, filter string) string
+}
+
+// textCapper is how a dialect says "the first n characters of this
+// expression". It is deliberately *not* part of Driver: the interface stays
+// introspection-shaped, and this is the one fragment of SQL a dialect has to
+// hand back. expr arrives already quoted, and n is a Go int rendered by us,
+// so nothing user-authored reaches the query through here.
+//
+// Every driver implements it; the type assertion in selectList means a future
+// one that cannot express a substring simply gets no server-side cap, and the
+// scan-side cap still protects the UI.
+type textCapper interface {
+	capText(expr string, n int) string
 }
 
 var registry = map[Kind]Driver{}
@@ -276,9 +312,50 @@ func limitOffsetClause(opts ReadOptions) string {
 	return b.String()
 }
 
+// selectList renders the projection.
+//
+// Long text columns are wrapped in the dialect's substring so the value is cut
+// by the server rather than shipped in full and trimmed here — that is the
+// whole point of the cap. Every other column passes through untouched, and
+// with nothing to cap the list collapses back to "*" so the query stays as
+// readable as it was before the cap existed.
+func selectList(d Driver, opts ReadOptions, cols []Column) string {
+	if len(opts.Select) > 0 {
+		parts := make([]string, 0, len(opts.Select))
+		for _, c := range opts.Select {
+			parts = append(parts, d.QuoteIdent(c))
+		}
+		return strings.Join(parts, ", ")
+	}
+
+	capper, ok := d.(textCapper)
+	if !ok || opts.TextCap <= 0 || len(cols) == 0 {
+		return "*"
+	}
+
+	capped := false
+	parts := make([]string, 0, len(cols))
+	for _, c := range cols {
+		q := d.QuoteIdent(c.Name)
+		if isLongTextType(c.DataType, opts.TextCap) {
+			// One character past the cap: that extra character is what tells
+			// the scan the value was cut, without a second query or a
+			// length() column tagged onto every row.
+			parts = append(parts, capper.capText(q, opts.TextCap+1)+" AS "+q)
+			capped = true
+			continue
+		}
+		parts = append(parts, q)
+	}
+	if !capped {
+		return "*"
+	}
+	return strings.Join(parts, ", ")
+}
+
 // buildStandardSelect is shared by every dialect using LIMIT/OFFSET.
-func buildStandardSelect(d Driver, ref ObjectRef, opts ReadOptions, target string) string {
-	return "SELECT * FROM " + target +
+func buildStandardSelect(d Driver, ref ObjectRef, opts ReadOptions, target string, cols []Column) string {
+	return "SELECT " + selectList(d, opts, cols) + " FROM " + target +
 		whereClause(opts.Filter) +
 		orderByClause(d, opts.OrderBy) +
 		limitOffsetClause(opts)

@@ -75,6 +75,10 @@ func (a *App) ReadRows(req api.ReadRowsRequest) (*api.ReadRowsResult, error) {
 	return a.svc.ReadRows(a.ctx, req)
 }
 
+func (a *App) ReadCell(req api.ReadCellRequest) (*driver.Cell, error) {
+	return a.svc.ReadCell(a.ctx, req)
+}
+
 func (a *App) CountRows(req api.CountRowsRequest) (int64, error) {
 	return a.svc.CountRows(a.ctx, req)
 }

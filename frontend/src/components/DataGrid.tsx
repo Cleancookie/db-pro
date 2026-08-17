@@ -1,6 +1,7 @@
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../store'
+import { ContextMenu, type MenuItem } from '../ui'
 import type { Cell, Column, ResultSet, Sort } from '../types'
 
 const WIDTH_SAMPLE_ROWS = 120
@@ -34,14 +35,33 @@ interface Props {
   onSort?: (column: string) => void
   /** Row offset of the first row, so numbering continues across pages. */
   rowOffset?: number
+  /** Opens one cell in the viewer — Enter, or a double-click. */
+  onOpenCell?: (rowIndex: number, colIndex: number) => void
+  /**
+   * Right-click actions for one cell. A builder rather than a list because the
+   * menu wraps the whole row area — one Radix root, not one per cell — and is
+   * asked for the items of whichever cell was clicked.
+   */
+  cellMenu?: (rowIndex: number, colIndex: number) => MenuItem[]
 }
 
 /**
  * Virtualised result grid. Only the visible rows are in the DOM, so a 100k-row
  * result with pagination off stays responsive.
  */
-export function DataGrid({ result, columns, orderBy, onSort, rowOffset = 0 }: Props) {
+export function DataGrid({
+  result,
+  columns,
+  orderBy,
+  onSort,
+  rowOffset = 0,
+  onOpenCell,
+  cellMenu,
+}: Props) {
   const scrollRef = useRef<HTMLDivElement>(null)
+  // The selected cell's own element, so the keyboard menu key can open the
+  // context menu where the cell is rather than at the pointer's last position.
+  const selectedRef = useRef<HTMLDivElement | null>(null)
   const [selected, setSelected] = useState<{ row: number; col: number } | null>(null)
   const rootPx = useStore((s) => s.settings.fontSizePx)
   const gm = useMemo(() => metrics(rootPx), [rootPx])
@@ -54,6 +74,13 @@ export function DataGrid({ result, columns, orderBy, onSort, rowOffset = 0 }: Pr
       numeric: isNumericType(rc.dbType, byName.get(rc.name)?.dataType),
     }))
   }, [result.columns, columns])
+
+  // A set keyed on "row:col" — the API sends only the cells that were cut, and
+  // a lookup per rendered cell has to be O(1) or scrolling pays for it.
+  const cutCells = useMemo(
+    () => new Set((result.truncatedCells ?? []).map((c) => `${c.row}:${c.col}`)),
+    [result.truncatedCells],
+  )
 
   // Widths are measured from a sample rather than the whole result: scanning
   // 100k rows to size columns would cost more than rendering them.
@@ -90,20 +117,59 @@ export function DataGrid({ result, columns, orderBy, onSort, rowOffset = 0 }: Pr
     setSelected(null)
   }, [result])
 
-  // Ctrl+C copies the selected cell. Copying what you are looking at is the
-  // single most common thing done with a result grid.
+  // Ctrl+C copies the selected cell, Enter opens it. Copying what you are
+  // looking at is the single most common thing done with a result grid; opening
+  // it is how a capped value, or a JSON document, is read at all.
   useEffect(() => {
-    const onCopy = (e: KeyboardEvent) => {
-      if (!selected || !(e.ctrlKey || e.metaKey) || e.key !== 'c') return
+    const onKey = (e: KeyboardEvent) => {
+      if (!selected) return
+      // A cell stays selected while the user types in the filter box, where
+      // Enter means "apply" and Ctrl+C means "copy what I selected in here".
+      const target = e.target as HTMLElement | null
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement
+      ) {
+        return
+      }
+      // While the cell menu or a dialog is open the keys belong to it: Enter
+      // there means "activate the highlighted item", and handling it here as
+      // well would run the menu's action and open the viewer on top of it.
+      if (target?.closest('[role="menu"],[role="dialog"]')) return
+      if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && onOpenCell) {
+        e.preventDefault()
+        onOpenCell(selected.row, selected.col)
+        return
+      }
+      // The platform menu key, and its laptop-keyboard equivalent. Radix opens
+      // the menu from a contextmenu event, so the cheapest way to honour the
+      // key is to raise one at the selected cell — which also puts the menu
+      // where the cell is rather than wherever the pointer was left.
+      if ((e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) && cellMenu) {
+        const el = selectedRef.current
+        if (!el) return
+        e.preventDefault()
+        const box = el.getBoundingClientRect()
+        el.dispatchEvent(
+          new MouseEvent('contextmenu', {
+            bubbles: true,
+            clientX: Math.round(box.left + 8),
+            clientY: Math.round(box.bottom),
+          }),
+        )
+        return
+      }
+      if (!(e.ctrlKey || e.metaKey) || e.key !== 'c') return
       if (window.getSelection()?.toString()) return // let a text selection win
       const value = result.rows[selected.row]?.[selected.col]
       if (value === undefined) return
       e.preventDefault()
       void navigator.clipboard?.writeText(value === null ? '' : String(value))
     }
-    window.addEventListener('keydown', onCopy)
-    return () => window.removeEventListener('keydown', onCopy)
-  }, [selected, result])
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [selected, result, onOpenCell, cellMenu])
 
   if (result.columns.length === 0) {
     return (
@@ -116,6 +182,18 @@ export function DataGrid({ result, columns, orderBy, onSort, rowOffset = 0 }: Pr
   }
 
   const sort = orderBy?.[0]
+
+  // Built for the selected cell, which right-clicking has just set through
+  // mousedown. Whether there is a menu at all is decided by the prop and never
+  // by the selection: mounting the trigger conditionally would rebuild the row
+  // area on the first right-click, taking the element the event came from with
+  // it. The placeholder is all but unreachable for the same reason.
+  const menuItems: MenuItem[] | null = !cellMenu
+    ? null
+    : selected
+      ? cellMenu(selected.row, selected.col)
+      : [{ label: 'No cell selected', onSelect: () => {}, disabled: true }]
+  const menuHeading = selected ? meta[selected.col]?.name : undefined
 
   return (
     <div ref={scrollRef} className="h-full overflow-auto font-[var(--font-mono)] text-[0.75rem]">
@@ -170,62 +248,117 @@ export function DataGrid({ result, columns, orderBy, onSort, rowOffset = 0 }: Pr
           })}
         </div>
 
-        <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
-          {virtualizer.getVirtualItems().map((v) => {
-            const row = result.rows[v.index]
-            return (
-              <div
-                key={v.key}
-                className={`absolute flex ${
-                  v.index % 2 === 1 ? 'bg-white/[0.015]' : ''
-                } hover:bg-[var(--color-accent-dim)]/15`}
-                style={{
-                  top: v.start,
-                  height: v.size,
-                  left: 0,
-                  right: 0,
-                  minWidth: totalWidth,
-                }}
-              >
+        {/* The menu wraps the row area only: the header has its own meaning
+            for a click, and a cell menu over it would act on a cell that is
+            nowhere near the pointer. */}
+        <CellContextMenu items={menuItems} heading={menuHeading}>
+          <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
+            {virtualizer.getVirtualItems().map((v) => {
+              const row = result.rows[v.index]
+              return (
                 <div
-                  className="chrome flex shrink-0 items-center justify-end border-r border-[var(--color-border)] pr-2 text-[0.6875rem] text-[var(--color-faint)] select-none"
-                  style={{ width: gm.gutter }}
+                  key={v.key}
+                  className={`absolute flex ${
+                    v.index % 2 === 1 ? 'bg-white/[0.015]' : ''
+                  } hover:bg-[var(--color-accent-dim)]/15`}
+                  style={{
+                    top: v.start,
+                    height: v.size,
+                    left: 0,
+                    right: 0,
+                    minWidth: totalWidth,
+                  }}
                 >
-                  {rowOffset + v.index + 1}
+                  <div
+                    className="chrome flex shrink-0 items-center justify-end border-r border-[var(--color-border)] pr-2 text-[0.6875rem] text-[var(--color-faint)] select-none"
+                    style={{ width: gm.gutter }}
+                  >
+                    {rowOffset + v.index + 1}
+                  </div>
+                  {meta.map((m, ci) => {
+                    const isSelected = selected?.row === v.index && selected.col === ci
+                    const value = row[ci]
+                    const cut = cutCells.has(`${v.index}:${ci}`)
+                    return (
+                      <div
+                        key={ci}
+                        ref={isSelected ? selectedRef : undefined}
+                        onMouseDown={() => setSelected({ row: v.index, col: ci })}
+                        // mousedown already fires for the right button, but a
+                        // ctrl-click on macOS arrives as a contextmenu without
+                        // one. The menu must always act on the cell that was
+                        // actually clicked, never on a stale selection.
+                        onContextMenu={() => setSelected({ row: v.index, col: ci })}
+                        onDoubleClick={() => onOpenCell?.(v.index, ci)}
+                        className={`shrink-0 truncate border-r border-[var(--color-border)] px-2 ${
+                          m.numeric ? 'text-right' : ''
+                        } ${isSelected ? 'bg-[var(--color-accent-dim)]/60 ring-1 ring-[var(--color-accent)] ring-inset' : ''}`}
+                        style={{ width: widths[ci], lineHeight: `${gm.rowHeight}px` }}
+                        title={
+                          value === null
+                            ? 'NULL'
+                            : cut
+                              ? `${String(value)}\n\n(cut to ${result.textCap} characters — Enter for the whole value)`
+                              : String(value)
+                        }
+                      >
+                        {value === null ? (
+                          // NULL and '' must never look the same — telling them
+                          // apart is half of why people open a GUI at all.
+                          <span className="text-[var(--color-faint)] italic">NULL</span>
+                        ) : value === '' ? (
+                          <span className="text-[var(--color-faint)] italic">empty</span>
+                        ) : typeof value === 'boolean' ? (
+                          <span className="text-[var(--color-warn)]">{String(value)}</span>
+                        ) : cut ? (
+                          // Truncation must be visible in the cell, not only in
+                          // the tooltip: a value that was cut but looks whole is
+                          // worse than no value at all. The badge is pinned to
+                          // the right of the cell and the text truncates before
+                          // it, or the marker would be the first thing scrolled
+                          // out of sight — capped values always overflow.
+                          <span className="flex min-w-0 items-center gap-1">
+                            <span className="truncate">{String(value)}</span>
+                            <span className="shrink-0 rounded-sm bg-[var(--color-warn)]/20 px-1 text-[0.5625rem] font-semibold text-[var(--color-warn)]">
+                              CUT
+                            </span>
+                          </span>
+                        ) : (
+                          String(value)
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
-                {meta.map((m, ci) => {
-                  const isSelected = selected?.row === v.index && selected.col === ci
-                  const value = row[ci]
-                  return (
-                    <div
-                      key={ci}
-                      onMouseDown={() => setSelected({ row: v.index, col: ci })}
-                      className={`shrink-0 truncate border-r border-[var(--color-border)] px-2 ${
-                        m.numeric ? 'text-right' : ''
-                      } ${isSelected ? 'bg-[var(--color-accent-dim)]/60 ring-1 ring-[var(--color-accent)] ring-inset' : ''}`}
-                      style={{ width: widths[ci], lineHeight: `${gm.rowHeight}px` }}
-                      title={value === null ? 'NULL' : String(value)}
-                    >
-                      {value === null ? (
-                        // NULL and '' must never look the same — telling them
-                        // apart is half of why people open a GUI at all.
-                        <span className="text-[var(--color-faint)] italic">NULL</span>
-                      ) : value === '' ? (
-                        <span className="text-[var(--color-faint)] italic">empty</span>
-                      ) : typeof value === 'boolean' ? (
-                        <span className="text-[var(--color-warn)]">{String(value)}</span>
-                      ) : (
-                        String(value)
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            )
-          })}
-        </div>
+              )
+            })}
+          </div>
+        </CellContextMenu>
       </div>
     </div>
+  )
+}
+
+/**
+ * The row area's right-click menu, or the row area unchanged when the grid was
+ * given no menu to show. Keeping the decision here means the trigger wraps
+ * exactly the same element either way, so nothing about the grid's layout
+ * depends on whether a menu was supplied.
+ */
+function CellContextMenu({
+  items,
+  heading,
+  children,
+}: {
+  items: MenuItem[] | null
+  heading?: string
+  children: React.ReactNode
+}) {
+  if (!items) return children
+  return (
+    <ContextMenu items={items} heading={heading}>
+      {children}
+    </ContextMenu>
   )
 }
 

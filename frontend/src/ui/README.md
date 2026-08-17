@@ -22,6 +22,10 @@ that guarantee is gone.
   and is tuned against a real failure case. `cmdk` would replace it with its own
   matcher.
 - **The data grid.** Virtualised and performance-critical.
+- **The JSON tree** (`src/components/JsonView.tsx`). Eighty lines of our own,
+  against tens of kilobytes and a theme to fight for any of the viewer
+  libraries. There is no vendor API to quarantine, so there is nothing for this
+  layer to do.
 - **`<select>` and `<input type="checkbox">`.** Native elements are already
   keyboard-accessible and correct. Replacing them buys styling control we do
   not currently need, at the cost of a lot of JavaScript.

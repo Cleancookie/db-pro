@@ -73,6 +73,13 @@ func (postgresDriver) DSN(cfg ConnConfig, database string) (string, error) {
 
 func (postgresDriver) QuoteIdent(ident string) string { return quoteWith(`"`, `"`, ident) }
 
+// capText casts before cutting: left() takes text, and json/jsonb/xml are not
+// text as far as postgres is concerned. The cast is free on a column that
+// already is text.
+func (postgresDriver) capText(expr string, n int) string {
+	return fmt.Sprintf("left(%s::text, %d)", expr, n)
+}
+
 func (d postgresDriver) ListDatabases(ctx context.Context, db *sql.DB) ([]Database, error) {
 	rows, err := db.QueryContext(ctx, `
 		SELECT datname FROM pg_database
@@ -214,11 +221,11 @@ func (d postgresDriver) target(ref ObjectRef) string {
 	return qualify(d, ref.Schema, ref.Name)
 }
 
-func (d postgresDriver) BuildSelect(ref ObjectRef, opts ReadOptions, _ []Column) (string, error) {
+func (d postgresDriver) BuildSelect(ref ObjectRef, opts ReadOptions, cols []Column) (string, error) {
 	if ref.Name == "" {
 		return "", fmt.Errorf("postgres: no table specified")
 	}
-	return buildStandardSelect(d, ref, opts, d.target(ref)), nil
+	return buildStandardSelect(d, ref, opts, d.target(ref), cols), nil
 }
 
 func (d postgresDriver) BuildCount(ref ObjectRef, filter string) string {

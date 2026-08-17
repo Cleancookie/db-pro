@@ -47,6 +47,13 @@ func (sqliteDriver) DSN(cfg ConnConfig, _ string) (string, error) {
 
 func (sqliteDriver) QuoteIdent(ident string) string { return quoteWith(`"`, `"`, ident) }
 
+// capText uses substr, which counts characters on a TEXT value. SQLite is
+// dynamically typed, so a cap only ever reaches columns whose *declared* type
+// is text-shaped — see isLongTextType.
+func (sqliteDriver) capText(expr string, n int) string {
+	return fmt.Sprintf("substr(%s, 1, %d)", expr, n)
+}
+
 func (d sqliteDriver) ListDatabases(_ context.Context, _ *sql.DB) ([]Database, error) {
 	// "main" is the attached-database name every SQLite file has. Returned so
 	// the rest of the app can treat all dialects uniformly.
@@ -119,8 +126,8 @@ func (d sqliteDriver) target(ref ObjectRef) string {
 	return qualify(d, ref.Name)
 }
 
-func (d sqliteDriver) BuildSelect(ref ObjectRef, opts ReadOptions, _ []Column) (string, error) {
-	return buildStandardSelect(d, ref, opts, d.target(ref)), nil
+func (d sqliteDriver) BuildSelect(ref ObjectRef, opts ReadOptions, cols []Column) (string, error) {
+	return buildStandardSelect(d, ref, opts, d.target(ref), cols), nil
 }
 
 func (d sqliteDriver) BuildCount(ref ObjectRef, filter string) string {

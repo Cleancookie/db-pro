@@ -93,6 +93,55 @@ Pushed to `git@github.com:Cleancookie/db-pro.git`.
 
 ---
 
+## 2026-08-17 — long values and the JSON viewer
+
+Wishlist items 2 and 3, taken together because the second needs the first.
+
+### Requested
+
+> dbeaver does a smart thing where long data types such as text, json,
+> longtext, etc, are capped at a length so to now cause the UI to lag and also
+> the sql request doesn't bog down if there is a table with massive json in it.
+> lets also do that for our project.
+
+> another nice feature would be a nice json viewer
+
+### Decided
+
+| Question | Choice |
+| --- | --- |
+| Where the cap is applied | In the emitted SQL, per dialect (`LEFT`, `left(…::text, n)`, `SUBSTRING(CAST(…))`, `substr`). Trimming after the fetch would save the rendering and none of the bandwidth, which was the bigger of the two wins asked for |
+| How a dialect supplies its substring | An unexported `textCapper` interface, not a new `Driver` method — the interface stays introspection-shaped |
+| Which columns are capped | Decided from the introspected type name *and the cap*: an unbounded or `(max)` type always, a declared length only when it exceeds the cap. An unrecognised type is left alone rather than risking `substr()` on a number |
+| How truncation is made visible | `ResultSet.TruncatedCells`, from asking the server for `cap + 1` characters and noticing the extra one. Grid marks those cells `CUT` |
+| How the full value is fetched | `ReadCell`: one column of one row, addressed by absolute offset in the same filtered, sorted result. Works on views and keyless tables, unlike a primary-key lookup. Bounded at 8 MiB |
+| Configurability | `textCapChars` in Settings, 1024 by default (the ~1 kB DBeaver uses, which is the number that was asked for), 0 to disable. Saving a new cap re-reads the open table |
+| JSON viewer | Hand-rolled collapsible tree (`JsonView.tsx`), no new dependency. Opens on Enter or double-click, on JSON/JSONB columns and on text columns that happen to hold JSON |
+
+Verified against real MySQL, PostgreSQL and SQL Server containers as well as the
+SQLite-backed unit tests, because a wrong substring is a syntax error only the
+server can report.
+
+### Follow-up, same day
+
+The request restated, with two specifics: *"in dbeaver it limits it to just 1kb
+of data I think"*, and *"maybe we could add a right click context when we right
+click on a cell to open in the cell viewer"*.
+
+- Default cap moved 512 → **1024**. Defaults only: a settings file that already
+  names a cap keeps it, and one written before the feature existed picks up the
+  new default.
+- **Right-click menu on a grid cell** — open in cell viewer, copy value, copy
+  full value (uncapped, disabled when the shown value already is whole), copy
+  column name. Behind `ui/Menu.tsx`'s existing Radix wrapper, which gained only
+  an optional separator.
+- One menu wraps the row area rather than one per cell: a Radix root per
+  rendered cell would be hundreds in a virtualised grid. Right-click selects the
+  cell first, so the menu always acts on what was clicked. `Enter`, double-click
+  and the platform menu key all reach the same viewer.
+
+---
+
 ## Invariants
 
 Things that are true on purpose. Breaking one should be a decision, not an
@@ -111,6 +160,9 @@ test — which is the intended speed bump.
 | SQL Server invents an `ORDER BY` when paging unsorted (PK → first column → constant), or `OFFSET/FETCH` silently reorders between pages | `driver_test.go` |
 | Every identifier is quoted per dialect; only the user's filter fragment is raw | `driver_test.go` |
 | Non-finite floats are stringified — they cannot be JSON-encoded | `scan_test.go` |
+| The long-value cap is applied by the database, not after the fetch, and only to columns that can exceed it | `internal/driver/driver_test.go`, `internal/api/service_test.go` |
+| A capped cell is reported as capped — truncation is never silent | `service_test.go` |
+| The full value of one cell is always reachable, on views and keyless tables too | `service_test.go` |
 
 ### Design decisions
 

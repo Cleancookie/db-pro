@@ -1,5 +1,6 @@
 import { useRef } from 'react'
 import { useStore } from '../store'
+import { useCellMenu } from './CellMenu'
 import { DataGrid } from './DataGrid'
 
 /**
@@ -16,6 +17,8 @@ export function SqlEditor() {
   const sqlResult = useStore((s) => s.sqlResult)
   const busy = useStore((s) => s.busy)
   const setView = useStore((s) => s.setView)
+  const openCell = useStore((s) => s.openCell)
+  const cellMenu = useCellMenu('sql')
   const ref = useRef<HTMLTextAreaElement>(null)
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -72,7 +75,11 @@ export function SqlEditor() {
 
       <div className="min-h-0 flex-1">
         {sqlResult ? (
-          <DataGrid result={sqlResult} />
+          <DataGrid
+            result={sqlResult}
+            onOpenCell={(r, c) => openCell('sql', r, c)}
+            cellMenu={cellMenu}
+          />
         ) : (
           <div className="flex h-full items-center justify-center text-[var(--color-faint)]">
             Results appear here
