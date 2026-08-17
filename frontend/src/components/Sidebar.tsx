@@ -79,7 +79,9 @@ export function Sidebar() {
           {connections.length === 0 && (
             <p className="px-1.5 py-2 text-xs leading-relaxed text-[var(--color-faint)]">
               No connections yet. Press{' '}
-              <kbd className="rounded border border-[var(--color-border-strong)] px-1">Ctrl+K</kbd>{' '}
+              <kbd className="rounded border border-[var(--color-border-strong)] px-1">
+                Ctrl+Shift+P
+              </kbd>{' '}
               and choose “New connection”.
             </p>
           )}

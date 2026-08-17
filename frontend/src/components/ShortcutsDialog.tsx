@@ -2,7 +2,9 @@ import { useStore } from '../store'
 import { Dialog, dialogButton } from '../ui'
 
 const SHORTCUTS: [string, string][] = [
-  ['Ctrl+K', 'Command palette'],
+  ['Ctrl+P', 'Go to a connection, database or table'],
+  ['Ctrl+Shift+P', 'Run a command — settings, editor, activity'],
+  ['Ctrl+K', 'Go to… (the palette key from before the split)'],
   ['Ctrl+,', 'Settings'],
   ['Ctrl+F  /  /', 'Focus the WHERE filter'],
   ['Enter', 'Apply the filter'],

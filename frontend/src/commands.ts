@@ -61,11 +61,18 @@ export function qualifiedName(o: { schema: string; name: string }): string {
   return o.schema ? `${o.schema}.${o.name}` : o.name
 }
 
-export function buildCommands(s: Store): Command[] {
+/**
+ * The navigation palette (Ctrl+P): places to go.
+ *
+ * Tables, views, databases and connections — the things a person means when
+ * they know *what* they want to look at. Nothing here changes settings or
+ * app state beyond moving somewhere.
+ */
+export function buildNavigationCommands(s: Store): Command[] {
   const cmds: Command[] = []
 
   // Objects first: navigating to a table is by far the most common reason to
-  // open the palette, so those entries lead when nothing has been typed.
+  // open this palette, so those entries lead when nothing has been typed.
   if (s.activeConnectionId) {
     for (const o of s.objects) {
       cmds.push({
@@ -75,6 +82,19 @@ export function buildCommands(s: Store): Command[] {
         group: 'Open',
         candidate: objectCandidate(o),
         run: () => s.openObject(o),
+      })
+    }
+  }
+
+  if (s.capabilities?.serverHostsDatabases) {
+    for (const db of s.databases) {
+      if (db === s.activeDatabase) continue
+      cmds.push({
+        id: `database:${db}`,
+        title: `Use database ${db}`,
+        group: 'Databases',
+        candidate: { name: db, keywords: 'use database switch catalog', bias: -0.05 },
+        run: () => s.selectDatabase(db),
       })
     }
   }
@@ -93,6 +113,20 @@ export function buildCommands(s: Store): Command[] {
       run: () => s.connect(c.id),
     })
   }
+
+  return cmds
+}
+
+/**
+ * The action palette (Ctrl+Shift+P): things to do.
+ *
+ * Settings, the activity tray, pagination, managing connections. This is where
+ * everything that used to live in the top bar went — the app is
+ * palette-first, so a permanent strip of buttons for three actions was mostly
+ * ornament.
+ */
+export function buildActionCommands(s: Store): Command[] {
+  const cmds: Command[] = []
 
   cmds.push({
     id: 'connection:new',
@@ -122,19 +156,6 @@ export function buildCommands(s: Store): Command[] {
         group: 'Connections',
         candidate: { name: `Disconnect ${active.name}`, keywords: 'close drop' },
         run: () => s.disconnect(active.id),
-      })
-    }
-  }
-
-  if (s.capabilities?.serverHostsDatabases) {
-    for (const db of s.databases) {
-      if (db === s.activeDatabase) continue
-      cmds.push({
-        id: `database:${db}`,
-        title: `Use database ${db}`,
-        group: 'Databases',
-        candidate: { name: db, keywords: 'use database switch catalog', bias: -0.05 },
-        run: () => s.selectDatabase(db),
       })
     }
   }
@@ -287,7 +308,12 @@ export function buildCommands(s: Store): Command[] {
     title: 'Settings',
     group: 'App',
     shortcut: 'Ctrl+,',
-    candidate: { name: 'Settings', keywords: 'preferences options config font size' },
+    candidate: {
+      name: 'Settings',
+      // The cog in the top bar is gone, so this is the way in: worth matching
+      // the names of the things inside the dialog too.
+      keywords: 'preferences options config font size page cap confirm system',
+    },
     run: () => s.setDialog({ kind: 'settings' }),
   })
 

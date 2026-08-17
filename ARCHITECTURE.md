@@ -121,6 +121,40 @@ query is exactly the thing worth seeing. Hiding is a display choice the user can
 reverse; dropping was not.
 
 
+## Two palettes, and no top bar
+
+There is no menu bar, toolbar or header. The window is sidebar, content, and the
+activity tray along the bottom. Everything that was in the old top bar — the
+palette button, the settings cog, the busy indicator, the active table name —
+moved to where it belongs or to a palette entry, because a permanent strip of
+three buttons is ornament in an app driven from the keyboard.
+
+Where those went, since "it was removed" is the wrong answer for some of them:
+
+| Was in the header | Now |
+| --- | --- |
+| Settings cog | `Ctrl+,`, or "Settings" in the action palette |
+| `Ctrl+K` button | The palettes themselves, advertised on the empty state |
+| Active table name | The filter row, next to the `WHERE` it applies to |
+| "working…" | The tray's indeterminate bar, which is the same fact with more detail |
+| "dev (browser)" | The tray strip, and only in the browser transport |
+
+The palette is split in two, on the editor convention:
+
+- **`Ctrl+P` — go**: tables, views, databases, connections. Places.
+- **`Ctrl+Shift+P` — do**: settings, the SQL editor, the tray, pagination,
+  managing connections. Actions.
+
+One list had seventeen tables competing with twenty commands for the same two
+keystrokes, and the relative cutoff in `fuzzy.ts` could not help — the lists are
+not comparable, so a strong table match was suppressing weak-but-wanted
+commands and vice versa. Splitting them is what makes two characters enough.
+
+`Ctrl+K` still opens the "go" palette: it was the only palette key before the
+split and is the one in most people's fingers. `Ctrl+Shift+P` also switches
+between the two while one is open; `Ctrl+P` cannot, because inside a palette it
+is already the emacs-style move-up binding.
+
 ## Command palette matching
 
 Scoring is delegated to `fuzzysort` (`frontend/src/fuzzy.ts`) — the same class

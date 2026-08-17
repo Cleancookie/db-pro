@@ -1,15 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { buildCommands, type Command } from '../commands'
+import { buildActionCommands, buildNavigationCommands, type Command } from '../commands'
 import { rankCandidates, type Scored } from '../fuzzy'
 import { useStore } from '../store'
 
 /**
- * The command palette. Rebuilt from live state each time it opens, so the
- * offered commands always reflect what is actually possible right now.
+ * The palettes. Rebuilt from live state each time one opens, so what is offered
+ * always reflects what is actually possible right now.
+ *
+ * There are two, and which one is open is the only difference between them:
+ * 'go' (Ctrl+P) lists places — tables, databases, connections; 'do'
+ * (Ctrl+Shift+P) lists actions. One combined list meant seventeen tables and
+ * twenty commands competing for the same two keystrokes, and neither winning.
  */
 export function CommandPalette() {
-  const open = useStore((s) => s.paletteOpen)
-  const setOpen = useStore((s) => s.setPaletteOpen)
+  const mode = useStore((s) => s.palette)
+  const setPalette = useStore((s) => s.setPalette)
+  const open = mode !== null
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState(0)
   const listRef = useRef<HTMLDivElement>(null)
@@ -17,19 +23,26 @@ export function CommandPalette() {
   // Snapshotting on open avoids rebuilding the (potentially large) command
   // list on every keystroke, and stops the list shifting under the cursor if
   // a background refresh lands mid-typing.
-  const commands = useMemo(() => (open ? buildCommands(useStore.getState()) : []), [open])
+  const commands = useMemo(() => {
+    if (mode === null) return []
+    const s = useStore.getState()
+    return mode === 'go' ? buildNavigationCommands(s) : buildActionCommands(s)
+  }, [mode])
 
   const results = useMemo(
     () => groupContiguously(rankCandidates(query, commands, (c) => c.candidate)).slice(0, 200),
     [query, commands],
   )
 
+  // Reset on a mode change as well as on opening: switching palettes with a
+  // query already typed should not carry it across, since the two lists have
+  // nothing in common.
   useEffect(() => {
-    if (open) {
+    if (mode !== null) {
       setQuery('')
       setSelected(0)
     }
-  }, [open])
+  }, [mode])
 
   useEffect(() => {
     setSelected(0)
@@ -45,7 +58,7 @@ export function CommandPalette() {
 
   const run = (cmd: Command | undefined) => {
     if (!cmd) return
-    setOpen(false)
+    setPalette(null)
     void cmd.run()
   }
 
@@ -53,7 +66,7 @@ export function CommandPalette() {
     switch (e.key) {
       case 'Escape':
         e.preventDefault()
-        setOpen(false)
+        setPalette(null)
         break
       case 'ArrowDown':
         e.preventDefault()
@@ -82,9 +95,16 @@ export function CommandPalette() {
           setSelected((i) => Math.min(i + 1, results.length - 1))
         }
         break
+      case 'P':
       case 'p':
-        if (e.ctrlKey) {
-          e.preventDefault()
+        if (!e.ctrlKey) break
+        e.preventDefault()
+        if (e.shiftKey) {
+          // Switch palettes without closing. Ctrl+P alone cannot do this: it
+          // is the emacs-style move-up binding below, and taking it would
+          // cost more than the symmetry is worth.
+          setPalette(mode === 'go' ? 'do' : 'go')
+        } else {
           setSelected((i) => Math.max(i - 1, 0))
         }
         break
@@ -95,29 +115,44 @@ export function CommandPalette() {
     <div
       className="chrome fixed inset-0 z-50 flex items-start justify-center bg-black/50 pt-[12vh]"
       onMouseDown={(e) => {
-        if (e.target === e.currentTarget) setOpen(false)
+        if (e.target === e.currentTarget) setPalette(null)
       }}
     >
       <div
         className="w-[min(680px,92vw)] overflow-hidden rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-elevated)] shadow-2xl"
         role="dialog"
-        aria-label="Command palette"
+        aria-label={mode === 'go' ? 'Go to' : 'Run a command'}
       >
-        <input
-          autoFocus
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={onKeyDown}
-          placeholder="Type a table name or a command…"
-          spellCheck={false}
-          aria-label="Command"
-          className="w-full border-b border-[var(--color-border)] bg-transparent px-4 py-3.5 text-[0.9375rem] outline-none placeholder:text-[var(--color-faint)]"
-        />
+        <div className="flex items-center gap-2 border-b border-[var(--color-border)] px-4">
+          {/* Which palette this is, stated rather than implied: the two look
+              otherwise identical, and typing into the wrong one is the obvious
+              way to be confused by a split palette. */}
+          <span className="shrink-0 text-[0.625rem] font-semibold tracking-wider text-[var(--color-faint)] uppercase">
+            {mode === 'go' ? 'Go to' : 'Run'}
+          </span>
+          <input
+            autoFocus
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={onKeyDown}
+            placeholder={
+              mode === 'go' ? 'Table, database or connection…' : 'Settings, editor, activity…'
+            }
+            spellCheck={false}
+            aria-label={mode === 'go' ? 'Go to' : 'Command'}
+            className="min-w-0 flex-1 bg-transparent py-3.5 text-[0.9375rem] outline-none placeholder:text-[var(--color-faint)]"
+          />
+          <kbd className="shrink-0 rounded border border-[var(--color-border-strong)] px-1.5 py-0.5 font-[var(--font-mono)] text-[0.625rem] text-[var(--color-faint)]">
+            Ctrl+Shift+P
+          </kbd>
+        </div>
 
         <div ref={listRef} className="max-h-[52vh] overflow-y-auto py-1">
           {results.length === 0 && (
             <div className="px-4 py-6 text-center text-[var(--color-faint)]">
-              No matching commands
+              {mode === 'go'
+                ? 'Nothing to go to — connect first, or try Ctrl+Shift+P'
+                : 'No matching commands'}
             </div>
           )}
           {results.map(({ item, match }, i) => {

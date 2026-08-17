@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { transportName } from '../api'
 import {
   elapsedFor,
   hiddenCatalogueCount,
@@ -156,7 +157,18 @@ export function ActivityTray() {
           {label}
         </span>
         {status.running > 0 && <IndeterminateBar className="ml-1 h-[3px] w-24 rounded-full" />}
-        <span className="ml-auto font-[var(--font-mono)] text-[var(--color-faint)]">Ctrl+J</span>
+        {/* Only says anything in the browser transport, where knowing you are
+            not in the real app is worth a few pixels. */}
+        {transportName === 'http' && (
+          <span className="ml-auto text-[var(--color-warn)]">dev (browser)</span>
+        )}
+        <span
+          className={`font-[var(--font-mono)] text-[var(--color-faint)] ${
+            transportName === 'http' ? 'ml-3' : 'ml-auto'
+          }`}
+        >
+          Ctrl+J
+        </span>
       </button>
     </div>
   )

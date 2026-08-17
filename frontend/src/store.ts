@@ -51,6 +51,16 @@ export type DialogState =
 /** Which grid a cell came from, since only the browse grid can re-read it. */
 export type ResultSource = 'browse' | 'sql'
 
+/**
+ * The two palettes.
+ *
+ * 'go' navigates — connections, databases, tables. 'do' runs actions —
+ * settings, the activity tray, pagination. Splitting them is what lets each be
+ * short enough to scan: a single list mixing seventeen tables with twenty
+ * commands meant neither could be found by typing two letters.
+ */
+export type PaletteMode = 'go' | 'do'
+
 /** Which pane fills the main area. */
 export type View = 'data' | 'sql' | 'activity'
 
@@ -114,7 +124,8 @@ interface State {
    *  while this is above zero, so an idle app issues no requests at all. */
   inFlight: number
   trayOpen: boolean
-  paletteOpen: boolean
+  /** null when no palette is open. */
+  palette: PaletteMode | null
   dialog: DialogState
   busy: boolean
   toasts: Toast[]
@@ -146,7 +157,7 @@ interface State {
   runSql: () => Promise<void>
   saveConnection: (c: Connection, password: string | null) => Promise<void>
   deleteConnection: (id: string) => Promise<void>
-  setPaletteOpen: (open: boolean) => void
+  setPalette: (mode: PaletteMode | null) => void
   setDialog: (d: DialogState) => void
   /** Resolves a grid coordinate to a cell, or null if there is nothing there. */
   cellTarget: (source: ResultSource, rowIndex: number, colIndex: number) => CellTarget | null
@@ -277,7 +288,7 @@ export const useStore = create<State>((set, get) => {
     activityPolledAt: 0,
     inFlight: 0,
     trayOpen: false,
-    paletteOpen: false,
+    palette: null,
     dialog: { kind: 'none' },
     busy: false,
     toasts: [],
@@ -588,8 +599,8 @@ export const useStore = create<State>((set, get) => {
       }
     },
 
-    setPaletteOpen(paletteOpen) {
-      set({ paletteOpen })
+    setPalette(palette) {
+      set({ palette })
     },
 
     setDialog(dialog) {

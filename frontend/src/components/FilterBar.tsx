@@ -40,6 +40,9 @@ export function FilterBar() {
   }, [])
 
   const dirty = draft !== filter
+  const qualified = activeRef
+    ? `${activeRef.schema ? `${activeRef.schema}.` : ''}${activeRef.name}`
+    : ''
 
   const completion = useMemo(
     () => ({
@@ -51,6 +54,17 @@ export function FilterBar() {
 
   return (
     <div className="chrome flex items-center gap-2 border-b border-[var(--color-border)] bg-[var(--color-panel)] px-3 py-1.5">
+      {/* The open table's name. It used to live in the top bar; with that gone
+          this is the row that is always above the grid, and the name belongs
+          next to the filter that applies to it. */}
+      {activeRef && (
+        <span
+          title={qualified}
+          className="max-w-[14rem] shrink-0 truncate font-[var(--font-mono)] text-[0.6875rem] text-[var(--color-muted)]"
+        >
+          {qualified}
+        </span>
+      )}
       <span className="shrink-0 font-[var(--font-mono)] text-[0.6875rem] text-[var(--color-faint)]">
         WHERE
       </span>
