@@ -129,6 +129,8 @@ export const api = {
   activity: () => call<ActivityResult>('Activity', [], {}),
 
   cancelQuery: (id: string) => call<void>('CancelQuery', [id], { id }),
+
+  clearQueryHistory: () => call<void>('ClearQueryHistory', [], {}),
 }
 
 export function errorMessage(e: unknown): string {

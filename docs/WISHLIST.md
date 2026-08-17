@@ -51,3 +51,44 @@ Formatted, collapsible, readable — rather than one long line in a grid cell.
 Overlaps with item 2: a truncated JSON value needs a "fetch the whole thing"
 path before it can be viewed, so these two are worth designing together even if
 they ship separately.
+
+---
+
+## 4. Real server-side query state
+
+The activity tray shows a **status** column — `QUEUED`, `EXECUTING`,
+`READING ROWS`, `CANCELLING`, `DONE`, `FAILED`, `CANCELLED`. Those are the
+app's own lifecycle, instrumented in `internal/activity`, `internal/driver` and
+`internal/api`. They answer "are we waiting on the server or reading rows",
+which was the point of asking for the column:
+
+> a column to say the current status of the query like WRITING TO NET etc
+
+What they are *not* is the server's own opinion — MySQL's literal
+`writing to net`, `Sending data`, `Locked`; Postgres's `pg_stat_activity.state`
+and `wait_event`; SQL Server's `dm_exec_requests.status` plus its blocking
+session id. That is strictly better information: it can say *why* a query is
+slow, including that it is blocked on someone else's lock.
+
+The cost is a change to how queries are run, which is why it was deferred:
+
+- Each tracked query has to be pinned to its own `*sql.Conn` for its whole
+  lifetime, so its connection id can be captured — `CONNECTION_ID()`,
+  `pg_backend_pid()`, `@@SPID`. Today queries take any connection from the
+  pool, and `database/sql` gives no way to ask which one it used.
+- Reading the state then needs a *second* connection, since the first is busy
+  running the query being asked about. That is a monitoring connection, and
+  it needs its own lifecycle, error handling and permissions story —
+  `PROCESSLIST` beyond your own rows needs `PROCESS`, `pg_stat_activity` shows
+  other users' queries only to a superuser or `pg_read_all_stats`, and
+  `dm_exec_requests` wants `VIEW SERVER STATE`.
+- The pinned connection also unlocks a better cancel: `KILL QUERY <id>` /
+  `pg_cancel_backend(pid)` reaches queries that context cancellation cannot,
+  and reports whether it worked.
+- **SQLite has no equivalent at all.** There is no server, no session view. The
+  column would have to fall back to the instrumented phases per dialect, which
+  means the tray must keep both sources and label which one it is showing.
+
+Worth doing when the tray is being lived in and "why is this slow" becomes the
+question. It should not be done by widening the existing pool or by holding a
+monitoring connection open for connections nobody is querying.

@@ -161,6 +161,15 @@ export function buildCommands(s: Store): Command[] {
   })
 
   cmds.push({
+    id: 'tray:clear',
+    title: 'Clear the query log',
+    subtitle: 'Drops finished queries from the tray; anything running stays',
+    group: 'Query',
+    candidate: { name: 'Clear query log', keywords: 'activity history tray reset empty' },
+    run: () => s.clearQueryHistory(),
+  })
+
+  cmds.push({
     id: 'view:activity',
     title: 'Show open connections',
     subtitle: 'Connection pools per database, with disconnect',

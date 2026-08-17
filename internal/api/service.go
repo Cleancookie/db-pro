@@ -51,8 +51,9 @@ type SessionInfo struct {
 	Idle         int    `json:"idle"`
 }
 
-// ActivityResult is everything the activity page shows: what the app has open
-// and what it is currently running.
+// ActivityResult is what the app has open and what it has been running.
+// Queries covers both halves of the tray: what is in flight, then the bounded
+// history of what has finished.
 type ActivityResult struct {
 	Queries  []activity.Info `json:"queries"`
 	Sessions []SessionInfo   `json:"sessions"`
@@ -78,6 +79,10 @@ func (s *Service) Activity() ActivityResult {
 
 // CancelQuery stops one running query.
 func (s *Service) CancelQuery(id string) { s.activity.Cancel(id) }
+
+// ClearQueryHistory empties the finished half of the activity list. Anything
+// still running stays, since it is not history yet.
+func (s *Service) ClearQueryHistory() { s.activity.ClearHistory() }
 
 // --- connection management ---------------------------------------------------------
 
@@ -169,8 +174,9 @@ func (s *Service) Connect(ctx context.Context, connID string) (*ConnectResult, e
 	}
 
 	qctx, done := s.activity.Begin(ctx, connID, conn.Database, activity.KindIntrospect, "list databases")
+	activity.SetPhase(qctx, activity.PhaseExecuting)
 	dbs, err := sess.Driver.ListDatabases(qctx, sess.DB)
-	done()
+	done(err)
 	if err != nil {
 		return nil, fmt.Errorf("listing databases: %w", err)
 	}
@@ -222,7 +228,10 @@ func (s *Service) ListDatabases(ctx context.Context, connID string) ([]driver.Da
 	}
 
 	qctx, done := s.activity.Begin(ctx, connID, "", activity.KindIntrospect, "list databases")
-	defer done()
+	// Deferred with the error rather than called inline: a panic must not leave
+	// the query listed as running forever.
+	defer func() { done(err) }()
+	activity.SetPhase(qctx, activity.PhaseExecuting)
 	dbs, err := sess.Driver.ListDatabases(qctx, sess.DB)
 	if err != nil {
 		return nil, err
@@ -237,7 +246,8 @@ func (s *Service) ListObjects(ctx context.Context, connID, database string) ([]d
 	}
 
 	qctx, done := s.activity.Begin(ctx, connID, database, activity.KindIntrospect, "list objects")
-	defer done()
+	defer func() { done(err) }()
+	activity.SetPhase(qctx, activity.PhaseExecuting)
 	objs, err := sess.Driver.ListObjects(qctx, sess.DB, database)
 	if err != nil {
 		return nil, err
@@ -261,7 +271,8 @@ func (s *Service) ListColumns(ctx context.Context, connID string, ref driver.Obj
 	}
 
 	qctx, done := s.activity.Begin(ctx, connID, ref.Database, activity.KindIntrospect, "describe "+ref.Name)
-	defer done()
+	defer func() { done(err) }()
+	activity.SetPhase(qctx, activity.PhaseExecuting)
 	cols, err := sess.Driver.ListColumns(qctx, sess.DB, ref)
 	if err != nil {
 		return nil, err
@@ -336,7 +347,7 @@ func (s *Service) ReadRows(ctx context.Context, req ReadRowsRequest) (*ReadRowsR
 	}
 
 	qctx, done := s.activity.Begin(ctx, req.ConnectionID, req.Ref.Database, activity.KindBrowse, query)
-	defer done()
+	defer func() { done(err) }()
 	rs, err := driver.RunQuery(qctx, sess.DB, query, settings.RowCap)
 	if err != nil {
 		return nil, err
@@ -369,10 +380,11 @@ func (s *Service) CountRows(ctx context.Context, req CountRowsRequest) (int64, e
 	}
 	q := sess.Driver.BuildCount(req.Ref, req.Filter)
 	qctx, done := s.activity.Begin(ctx, req.ConnectionID, req.Ref.Database, activity.KindCount, q)
-	defer done()
+	defer func() { done(err) }()
+	activity.SetPhase(qctx, activity.PhaseExecuting)
 
 	var n int64
-	if err := sess.DB.QueryRowContext(qctx, q).Scan(&n); err != nil {
+	if err = sess.DB.QueryRowContext(qctx, q).Scan(&n); err != nil {
 		return 0, err
 	}
 	return n, nil
@@ -399,16 +411,19 @@ func (s *Service) RunSQL(ctx context.Context, req RunSQLRequest) (*driver.Result
 	}
 
 	qctx, done := s.activity.Begin(ctx, req.ConnectionID, req.Database, activity.KindQuery, stmt)
-	defer done()
+	defer func() { done(err) }()
 
 	maxRows := req.MaxRows
 	if maxRows <= 0 {
 		maxRows = s.settings.Get().RowCap
 	}
+	var rs *driver.ResultSet
 	if returnsRows(stmt) {
-		return driver.RunQuery(qctx, sess.DB, stmt, maxRows)
+		rs, err = driver.RunQuery(qctx, sess.DB, stmt, maxRows)
+	} else {
+		rs, err = driver.Exec(qctx, sess.DB, stmt)
 	}
-	return driver.Exec(qctx, sess.DB, stmt)
+	return rs, err
 }
 
 // returnsRows guesses from the leading keyword whether to use Query or Exec.

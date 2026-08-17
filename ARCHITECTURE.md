@@ -147,20 +147,57 @@ Three modes, chosen in the UI and carried on every `ReadRows` request:
 in-flight is a fact the backend already holds and cancellation is just closing
 that query's context. Two surfaces read it, split by the shape of the data:
 
-- **The tray** (`components/ActivityTray.tsx`) — in-flight queries. Ephemeral,
-  one line each, wanted while looking at something else, so it lives along the
-  bottom of every view with a collapsed strip that is always visible.
+- **The tray** (`components/ActivityTray.tsx`) — queries: what is in flight,
+  above a bounded history of what has finished. One line each, wanted while
+  looking at something else, so it lives along the bottom of every view with a
+  collapsed strip that is always visible.
 - **The page** (`components/ActivityPage.tsx`) — `activity.sessions`, the pool
   stats per open connection. Stable and tabular; a page, reached by
   `Ctrl+Shift+A`.
 
-Three things about the tray are deliberate:
+### Lifecycle states
 
+The status column is the app's own instrumentation, not the server's opinion:
+
+| Phase | Set where |
+| --- | --- |
+| `queued` | `activity.Begin` — registered, not yet handed to `database/sql` |
+| `executing` | `driver.RunQuery`/`Exec` before `QueryContext`, and in `api` before each introspection call. Covers the wait for a pooled connection *and* the server's work |
+| `reading rows` | after `QueryContext` returns; `RowsRead` advances every 512 rows |
+| `cancelling` | `Registry.Cancel`, until the driver unwinds |
+| `done` / `failed` / `cancelled` | the function `Begin` returned, from the error it is passed |
+
+Driver-level code reports through the context (`activity.SetPhase`,
+`activity.AddRows`), so `internal/driver` never touches the registry and a
+context without a tracker is a silent no-op. There is deliberately no separate
+"scanning" phase: reading and normalising are the same loop, so it would flicker
+per row and say nothing — the row counter is the honest version of it.
+
+Real server-side state (`SHOW PROCESSLIST`, `pg_stat_activity`,
+`dm_exec_requests`) is a wishlist item, not this. It needs every query pinned to
+its own `*sql.Conn`; see `docs/WISHLIST.md`.
+
+### History
+
+Finished queries stay in the pane, so the tray doubles as a log of what the
+session has run. `Registry.history` is a fixed ring of `historySize` (200)
+entries; retained SQL is capped at `historySQLLimit` (2000 chars) and error text
+at 500, because a ring of editor statements is the one place here where retained
+strings could add up. Catalogue reads (`KindIntrospect`) are visible while they
+run but are not retained — they fire on every table open and would push out the
+queries the user actually ran. `ClearQueryHistory` empties the ring.
+
+Four things about the tray are deliberate:
+
+- **It never opens itself.** The strip's indeterminate bar is the "something is
+  happening" signal; taking over the bottom of the window on every page turn
+  would be worse than the problem it solves.
 - **Polling is driven by demand, not by a clock.** The store keeps an
   `inFlight` count, incremented around each call that runs SQL. The tray polls
-  only while that is non-zero, while it is expanded, or while the connections
-  page is open — and polls once more on the way down, so a finished query
-  leaves the list. An idle app issues nothing.
+  only while that is non-zero, and once more on the way down so the log ends up
+  settled. With history retained, an open tray over an idle app has nothing to
+  re-fetch — the list cannot change until the next query — so it fetches
+  nothing. Opening the tray or the connections page triggers a single refresh.
 - **Timers tick locally.** `elapsedMs` is measured by Go at poll time;
   `frontend/src/activity.ts` adds the time since that response arrived. The
   timer therefore advances every 100ms while the network sees a request every

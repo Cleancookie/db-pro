@@ -3,7 +3,7 @@ import { focusFilter } from '../commands'
 import { transportName } from '../api'
 import { useStore } from '../store'
 import { ActivityPage } from './ActivityPage'
-import { ActivityTray } from './ActivityTray'
+import { ActivityTray, ConfirmCancelDialog } from './ActivityTray'
 import { CommandPalette } from './CommandPalette'
 import { ConfirmDeleteDialog } from './ConnectionMenu'
 import { ConnectionDialog } from './ConnectionDialog'
@@ -110,6 +110,9 @@ export function App() {
       {dialog.kind === 'settings' && <SettingsDialog />}
       {dialog.kind === 'confirmDelete' && (
         <ConfirmDeleteDialog name={dialog.connection.name} id={dialog.connection.id} />
+      )}
+      {dialog.kind === 'confirmCancel' && (
+        <ConfirmCancelDialog queryId={dialog.queryId} sql={dialog.sql} />
       )}
       <Toasts />
     </div>

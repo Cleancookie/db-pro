@@ -27,6 +27,7 @@ export type DialogState =
   | { kind: 'shortcuts' }
   | { kind: 'settings' }
   | { kind: 'confirmDelete'; connection: Connection }
+  | { kind: 'confirmCancel'; queryId: string; sql: string }
 
 /** Which pane fills the main area. */
 export type View = 'data' | 'sql' | 'activity'
@@ -115,6 +116,7 @@ interface State {
   saveSettings: (s: Settings) => Promise<void>
   refreshActivity: () => Promise<void>
   cancelQuery: (id: string) => Promise<void>
+  clearQueryHistory: () => Promise<void>
   setTrayOpen: (open: boolean) => void
   setSqlText: (t: string) => void
   runSql: () => Promise<void>
@@ -456,8 +458,21 @@ export const useStore = create<State>((set, get) => {
     },
 
     async cancelQuery(id) {
+      // The confirmation, when there is one, is dismissed before the request:
+      // a runaway query is being stopped and the dialog must not sit there
+      // while the driver unwinds.
+      if (get().dialog.kind === 'confirmCancel') set({ dialog: { kind: 'none' } })
       try {
         await api.cancelQuery(id)
+        await get().refreshActivity()
+      } catch (e) {
+        get().pushToast('error', errorMessage(e))
+      }
+    },
+
+    async clearQueryHistory() {
+      try {
+        await api.clearQueryHistory()
         await get().refreshActivity()
       } catch (e) {
         get().pushToast('error', errorMessage(e))

@@ -1,3 +1,4 @@
+import { isRunning } from '../activity'
 import { useStore } from '../store'
 
 /**
@@ -31,7 +32,7 @@ export function ActivityPage() {
           onClick={() => setTrayOpen(true)}
           className="text-xs text-[var(--color-accent)] hover:underline"
         >
-          {activity.queries.length} running — show in the tray
+          {activity.queries.filter(isRunning).length} running — show in the tray
         </button>
         <button
           onClick={() => setView('data')}

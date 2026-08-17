@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { elapsedFor, trayStatus } from '../activity'
-import { formatDuration } from '../commands'
+import { elapsedFor, isRunning, trayStatus } from '../activity'
+import { formatCount, formatDuration } from '../commands'
 import { useStore } from '../store'
-import type { QueryKind, RunningQuery } from '../types'
+import { Dialog, dialogButton } from '../ui'
+import type { QueryInfo, QueryKind, QueryPhase } from '../types'
 
 /** How often Go is asked what is running — only while something is. */
 const POLL_MS = 700
@@ -17,55 +18,97 @@ const KIND_LABEL: Record<QueryKind, string> = {
 }
 
 /**
+ * Status colours. Only three distinctions matter at a glance: waiting on the
+ * server, working locally, and something the user should look at.
+ */
+const PHASE_CLASS: Record<QueryPhase, string> = {
+  queued: 'text-[var(--color-faint)]',
+  executing: 'text-[var(--color-accent)]',
+  'reading rows': 'text-[var(--color-success)]',
+  cancelling: 'text-[var(--color-warn)]',
+  done: 'text-[var(--color-faint)]',
+  failed: 'text-[var(--color-danger)]',
+  cancelled: 'text-[var(--color-warn)]',
+}
+
+/**
  * The bottom tray: always present, collapsed to one strip, expandable to the
- * list of in-flight queries with a cancel on each.
+ * query log — what is running now, above a bounded history of what has just
+ * run, with a cancel on anything still going.
  *
- * It is the app's only activity poller. The tray is mounted for the whole
+ * It never opens itself. A query starting is announced by the strip's
+ * indeterminate bar; taking over the bottom of the window uninvited, every
+ * time a page is turned, would be worse than the problem it solves.
+ *
+ * The tray is also the app's only activity poller. It is mounted for the whole
  * session, so putting the polling here means one interval rather than one per
- * interested component — and the activity page below simply reads the store.
+ * interested component — the connections page reads the same snapshot.
  *
- * The strip's height never changes with what is running. A query starting
- * must not resize the grid underneath it, so the expanded list is an overlay
- * rather than another row in the layout.
+ * The strip's height never changes with what is running. A query starting must
+ * not resize the grid underneath it, so the expanded list is an overlay rather
+ * than another row in the layout.
  */
 export function ActivityTray() {
   const queries = useStore((s) => s.activity.queries)
   const polledAt = useStore((s) => s.activityPolledAt)
   const inFlight = useStore((s) => s.inFlight)
   const open = useStore((s) => s.trayOpen)
-  const view = useStore((s) => s.view)
   const setTrayOpen = useStore((s) => s.setTrayOpen)
   const refresh = useStore((s) => s.refreshActivity)
+  const clearHistory = useStore((s) => s.clearQueryHistory)
 
-  // Three reasons to be watching: the app is waiting on the server, the user
-  // has the list open, or the activity page is on screen reading the same
-  // snapshot. Otherwise there is nothing to see and nothing is asked for.
-  const watching = inFlight > 0 || open || view === 'activity'
-  usePolling(watching, refresh)
-  const now = useTicker(watching && queries.length > 0)
-
+  // The app is the only thing that issues queries, so its own count of
+  // outstanding calls is the whole answer to "is there anything to watch".
+  // With history retained the list is otherwise static: an open tray over an
+  // idle app has nothing to re-fetch, and polling it would be a request per
+  // second forever for a list that cannot change.
+  usePolling(inFlight > 0, refresh)
+  const now = useTicker(queries.some(isRunning))
   const status = trayStatus(queries, polledAt, now)
+
   const label =
     status.running === 0
-      ? 'Nothing running'
+      ? status.finished > 0
+        ? `Idle · ${status.finished} in the log`
+        : 'Nothing running'
       : `${status.running} running · ${formatDuration(status.longestMs)}` +
         (status.cancelling > 0 ? ` · ${status.cancelling} cancelling` : '')
 
   return (
     <div className="chrome relative shrink-0 border-t border-[var(--color-border)] bg-[var(--color-panel)]">
       {open && (
-        <div className="absolute inset-x-0 bottom-full max-h-[40vh] overflow-y-auto border-t border-[var(--color-border)] bg-[var(--color-panel)] shadow-[0_-8px_24px_rgba(0,0,0,0.45)]">
-          {queries.length === 0 ? (
-            <p className="px-3 py-4 text-center text-xs text-[var(--color-faint)]">
-              No queries running
-            </p>
-          ) : (
-            <ul className="flex flex-col">
-              {queries.map((q) => (
-                <QueryRow key={q.id} query={q} polledAt={polledAt} now={now} />
-              ))}
-            </ul>
-          )}
+        <div className="absolute inset-x-0 bottom-full flex max-h-[40vh] flex-col border-t border-[var(--color-border)] bg-[var(--color-panel)] shadow-[0_-8px_24px_rgba(0,0,0,0.45)]">
+          {/* Column widths are repeated in QueryRow. Fixed rather than a grid
+              so a row appearing cannot shift the columns of the rest. */}
+          <div className="flex shrink-0 items-center gap-2 border-b border-[var(--color-border)] px-3 py-1 text-[0.625rem] tracking-wider text-[var(--color-faint)] uppercase">
+            <span className="w-12 shrink-0">ID</span>
+            <span className="w-16 shrink-0">Kind</span>
+            <span className="w-32 shrink-0">Status</span>
+            <span className="w-24 shrink-0">Where</span>
+            <span className="min-w-0 flex-1">Query</span>
+            <span className="w-14 shrink-0" />
+            <span className="w-14 shrink-0 text-right">Time</span>
+            <button
+              onClick={() => void clearHistory()}
+              disabled={status.finished === 0}
+              className="w-16 shrink-0 rounded py-0.5 tracking-normal normal-case disabled:opacity-30 enabled:hover:bg-[var(--color-elevated)] enabled:hover:text-[var(--color-text)]"
+            >
+              Clear log
+            </button>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            {queries.length === 0 ? (
+              <p className="px-3 py-4 text-center text-xs text-[var(--color-faint)]">
+                No queries yet
+              </p>
+            ) : (
+              <ul className="flex flex-col">
+                {queries.map((q) => (
+                  <QueryRow key={q.id} query={q} polledAt={polledAt} now={now} />
+                ))}
+              </ul>
+            )}
+          </div>
         </div>
       )}
 
@@ -80,7 +123,9 @@ export function ActivityTray() {
         <span className="font-semibold tracking-wider text-[var(--color-faint)] uppercase">
           Activity
         </span>
-        <span className={status.running > 0 ? 'text-[var(--color-text)]' : 'text-[var(--color-faint)]'}>
+        <span
+          className={status.running > 0 ? 'text-[var(--color-text)]' : 'text-[var(--color-faint)]'}
+        >
           {label}
         </span>
         {status.running > 0 && <IndeterminateBar className="ml-1 h-[3px] w-24 rounded-full" />}
@@ -95,55 +140,135 @@ function QueryRow({
   polledAt,
   now,
 }: {
-  query: RunningQuery
+  query: QueryInfo
   polledAt: number
   now: number
 }) {
   const cancelQuery = useStore((s) => s.cancelQuery)
+  const setDialog = useStore((s) => s.setDialog)
+  const confirmDestructive = useStore((s) => s.settings.confirmDestructive)
   const connections = useStore((s) => s.connections)
+
   const name = connections.find((c) => c.id === query.connectionId)?.name ?? query.connectionId
+  const running = isRunning(query)
   const elapsed = elapsedFor(query, polledAt, now)
 
+  const requestCancel = () => {
+    if (confirmDestructive) setDialog({ kind: 'confirmCancel', queryId: query.id, sql: query.sql })
+    else void cancelQuery(query.id)
+  }
+
   return (
-    <li className="flex items-center gap-2 border-b border-[var(--color-border)] px-3 py-1.5 text-xs last:border-b-0">
-      <span className="shrink-0 rounded bg-[var(--color-accent-dim)]/40 px-1.5 py-0.5">
-        {KIND_LABEL[query.kind] ?? query.kind}
+    <li
+      className={`flex items-center gap-2 border-b border-[var(--color-border)] px-3 py-1 text-xs last:border-b-0 ${
+        running ? '' : 'text-[var(--color-faint)]'
+      }`}
+    >
+      <span className="w-12 shrink-0 font-[var(--font-mono)] text-[var(--color-muted)]">
+        {query.id}
       </span>
-      <span className="shrink-0 text-[var(--color-muted)]">{name}</span>
-      {query.database && (
-        <span className="shrink-0 text-[var(--color-faint)]">/ {query.database}</span>
-      )}
-      {/* The SQL is one line here: the tray is a glance, and the full text is
-          on the query itself if it needs reading. */}
+      <span className="w-16 shrink-0 truncate">{KIND_LABEL[query.kind] ?? query.kind}</span>
+      <span className={`flex w-32 shrink-0 items-center gap-1.5 ${PHASE_CLASS[query.phase]}`}>
+        <span className="truncate uppercase">{query.phase}</span>
+        {/* Rows read is the honest version of "we are scanning": it moves. */}
+        {query.rowsRead > 0 && (
+          <span className="font-[var(--font-mono)] text-[var(--color-faint)]">
+            {formatCount(query.rowsRead)}
+          </span>
+        )}
+      </span>
       <span
-        title={query.sql}
-        className="min-w-0 flex-1 truncate font-[var(--font-mono)] text-[var(--color-muted)]"
+        className="w-24 shrink-0 truncate text-[var(--color-faint)]"
+        title={query.database ? `${name} / ${query.database}` : name}
       >
-        {query.sql}
+        {name}
       </span>
-      <IndeterminateBar className="h-[3px] w-20 shrink-0 rounded-full" warn={query.cancelled} />
+      {/* One line here: the tray is a glance. The full text is a hover away,
+          and the query itself is still in the editor. */}
+      <span
+        title={query.error ? `${query.sql}\n\n${query.error}` : query.sql}
+        className={`min-w-0 flex-1 truncate font-[var(--font-mono)] ${
+          query.error ? 'text-[var(--color-danger)]' : ''
+        }`}
+      >
+        {query.error ?? query.sql}
+      </span>
+      {running ? (
+        <IndeterminateBar
+          className="h-[3px] w-14 shrink-0 rounded-full"
+          warn={query.phase === 'cancelling'}
+        />
+      ) : (
+        <span className="w-14 shrink-0" />
+      )}
       <span
         className={`w-14 shrink-0 text-right font-[var(--font-mono)] ${
-          elapsed > 5000 ? 'text-[var(--color-warn)]' : 'text-[var(--color-faint)]'
+          running && elapsed > 5000 ? 'text-[var(--color-warn)]' : ''
         }`}
       >
         {formatDuration(elapsed)}
       </span>
       <button
-        onClick={() => void cancelQuery(query.id)}
-        disabled={query.cancelled}
-        className="shrink-0 rounded border border-[var(--color-border-strong)] px-2 py-0.5 text-[var(--color-danger)] disabled:opacity-40 enabled:hover:border-[var(--color-danger)]"
+        onClick={requestCancel}
+        disabled={!running || query.phase === 'cancelling'}
+        className="w-16 shrink-0 rounded border border-[var(--color-border-strong)] py-0.5 text-[var(--color-danger)] disabled:invisible enabled:hover:border-[var(--color-danger)]"
       >
-        {query.cancelled ? 'cancelling…' : 'Cancel'}
+        Cancel
       </button>
     </li>
   )
 }
 
 /**
+ * Confirmation for cancelling. Cancelling a half-written statement is not
+ * free, and the button sits in a list of rows that shift as queries finish, so
+ * a mis-click is easy. Enter confirms — the button is focused on mount — and
+ * Escape backs out. Turning off "confirm destructive actions" in Settings
+ * removes this step for anyone who would rather have the single click.
+ */
+export function ConfirmCancelDialog({ queryId, sql }: { queryId: string; sql: string }) {
+  const setDialog = useStore((s) => s.setDialog)
+  const cancelQuery = useStore((s) => s.cancelQuery)
+  const close = () => setDialog({ kind: 'none' })
+
+  return (
+    <Dialog
+      open
+      onClose={close}
+      title={`Cancel ${queryId}?`}
+      widthClass="w-[min(30rem,92vw)]"
+      footer={
+        <>
+          <button onClick={close} className={`ml-auto ${dialogButton.ghost}`}>
+            Keep running
+          </button>
+          <button
+            autoFocus
+            onClick={() => void cancelQuery(queryId)}
+            className={dialogButton.dangerFilled}
+          >
+            Cancel query
+          </button>
+        </>
+      }
+    >
+      <div className="px-4 py-4">
+        <p className="mb-2 leading-relaxed text-[var(--color-muted)]">
+          The statement is stopped at the server. A write that is part-way through is rolled back by
+          the database, not by this app.
+        </p>
+        <pre className="max-h-32 overflow-auto rounded bg-[var(--color-bg)] p-2 font-[var(--font-mono)] text-xs whitespace-pre-wrap text-[var(--color-muted)]">
+          {sql}
+        </pre>
+      </div>
+    </Dialog>
+  )
+}
+
+/**
  * Indeterminate on purpose: a query's duration is not knowable up front, and a
  * percentage that is really a guess is worse than none. The bar shows motion,
- * the timer next to it shows the fact.
+ * the status and timer beside it show the facts.
  */
 function IndeterminateBar({ className = '', warn = false }: { className?: string; warn?: boolean }) {
   return (
@@ -155,7 +280,7 @@ function IndeterminateBar({ className = '', warn = false }: { className?: string
   )
 }
 
-/** Polls while `on`, and once more on the way down so a finished query leaves. */
+/** Polls while `on`, and once more on the way down so the log ends up settled. */
 function usePolling(on: boolean, refresh: () => Promise<void>) {
   // Starts settled: a cold, idle app must not issue a request just to be told
   // that nothing is running.
@@ -181,6 +306,7 @@ function useTicker(on: boolean): number {
     return () => clearInterval(t)
   }, [on])
 
-  // While off, the value is stale but unused — nothing is running to time.
+  // While off, the value is stale but unused: history carries its own final
+  // duration and nothing else is being timed.
   return now
 }

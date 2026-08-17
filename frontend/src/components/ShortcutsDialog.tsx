@@ -10,7 +10,7 @@ const SHORTCUTS: [string, string][] = [
   ['Ctrl+Enter', 'Run the query (in the editor)'],
   ['Ctrl+R', 'Refresh the current rows'],
   ['Ctrl+←  /  Ctrl+→', 'Previous / next page'],
-  ['Ctrl+J', 'Toggle the activity tray'],
+  ['Ctrl+J', 'Toggle the activity tray (query log)'],
   ['Ctrl+Shift+A', 'Open connections'],
   ['Right-click', 'Connection actions in the sidebar'],
   ['Ctrl+C', 'Copy the selected cell'],

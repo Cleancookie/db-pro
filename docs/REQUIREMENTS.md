@@ -120,6 +120,32 @@ each query gets a ticking timer, an indeterminate bar and a Cancel.
 The header's old "N running" button went away: the strip says the same thing
 permanently, and two indicators for one fact drift apart.
 
+### Second pass, same session
+
+> I was thinking a one line preview of the query, maybe a query ID, and then a
+> column to say the current status of the query like WRITING TO NET etc, and
+> also how long it has been running for and maybe a cancel button (that
+> requires confirmation) once the query is done it will auto hide maybe, or
+> maybe this query should stay in this pane always so there is a history of
+> queries and then we show the pane when there is a running query?
+
+Answers given by the user when asked:
+
+| Question | Choice |
+| --- | --- |
+| Real server state (`writing to net`) or the app's own phases? | The app's own, instrumented. Real engine state deferred — wishlist item 4 |
+| Auto-hide, or keep a history? | Keep a history, with the final duration and a terminal status |
+| Auto-open the pane when a query starts? | **No.** The strip's bar is signal enough |
+
+Delivered: a query id column (`q001`, zero-padded so the column does not
+change width), a status column from real instrumentation, a bounded history
+ring of 200 entries, `Clear log`, and a confirmation on Cancel that honours the
+existing "confirm destructive actions" setting.
+
+Catalogue reads are shown while they run but are not retained in the history:
+they fire on every table open and would push the user's own queries out of the
+ring within a minute.
+
 ---
 
 ## Invariants
@@ -153,6 +179,7 @@ test — which is the intended speed bump.
 | The palette matches the object *name* first; schema and keywords only at a discount | Otherwise "user" returns everything in a schema containing those letters |
 | Palette results are cut relative to the best score | Fuzzy matching is permissive by nature; ordering alone does not narrow a list |
 | Activity polling is driven by the store's in-flight count, never by a bare timer | An idle app must issue no requests. A poller that runs regardless is a background load on every connected database |
+| The query history is a fixed ring with capped retained SQL | It grows for the whole session otherwise, and holds statement text |
 | Query timers extrapolate from the last snapshot, never from `startedAt` | `startedAt` is the server's wall clock; clock skew would show a fresh query as minutes old |
 | The UI is sized in `rem` from a single root font size | The Settings slider must scale spacing and controls, not just text |
 | `frontend/dist/.gitkeep` stays tracked, and builds must not delete it | `main.go` embeds `frontend/dist`; without it a fresh clone will not compile |

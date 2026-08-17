@@ -92,3 +92,5 @@ func (a *App) SaveSettings(v config.Settings) (config.Settings, error) {
 func (a *App) Activity() api.ActivityResult { return a.svc.Activity() }
 
 func (a *App) CancelQuery(id string) { a.svc.CancelQuery(id) }
+
+func (a *App) ClearQueryHistory() { a.svc.ClearQueryHistory() }
