@@ -57,12 +57,11 @@ Open <http://localhost:5173>.
 
 ```sh
 make windows          # -> build/bin/db-pro.exe
-make wails-dev        # native window with hot reload
 make                  # list every target
 ```
 
-`wails dev` on Linux needs `webkit2gtk-4.1` and `libgtk-3-dev`. Windows needs the
-WebView2 runtime (present on Windows 11 and any updated Windows 10).
+For a native window with hot reload, run `wails dev` directly; on Linux it needs
+`webkit2gtk-4.1` and `libgtk-3-dev`. Windows needs the WebView2 runtime (present on Windows 11 and any updated Windows 10).
 
 ## Tracking
 
@@ -87,7 +86,8 @@ frontend/           React + TS + Vite + Tailwind
 ## Committing
 
 Subjects start with one of four emoji, which names the size of the change and
-maps to a semver bump. `make hooks` installs a hook that enforces it.
+maps to a semver bump. Convention only — nothing enforces it, so it is on you
+and on anything committing on your behalf.
 
 | | | |
 | --- | --- | --- |
