@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { formatCount } from '../commands'
+import { parsePageSize } from '../pageSize'
 import { PAGE_SIZES, useStore } from '../store'
 
 /**
@@ -19,9 +20,35 @@ export function Paginator() {
   const setPage = useStore((s) => s.setPage)
   const setPageSize = useStore((s) => s.setPageSize)
   const setPaginationEnabled = useStore((s) => s.setPaginationEnabled)
+  const rowCap = useStore((s) => s.settings.rowCap)
 
   const [pageDraft, setPageDraft] = useState(String(page))
   useEffect(() => setPageDraft(String(page)), [page])
+
+  // The size dropdown is presets plus a "Custom…" escape hatch for a one-off
+  // number the user already knows (a gnarly 5-row table, say). Landing on a
+  // pageSize that isn't a preset — because the last thing typed here was
+  // custom — should also land in custom mode, so the control reflects reality
+  // on mount rather than silently snapping back to the nearest preset.
+  const isPreset = (n: number) => (PAGE_SIZES as readonly number[]).includes(n)
+  const [customMode, setCustomMode] = useState(!isPreset(pageSize))
+  const [customDraft, setCustomDraft] = useState(String(pageSize))
+  useEffect(() => {
+    setCustomMode(!isPreset(pageSize))
+    setCustomDraft(String(pageSize))
+  }, [pageSize])
+
+  const commitCustomSize = () => {
+    const n = parsePageSize(customDraft, rowCap)
+    // Bad input is non-destructive: fall back to whatever page size is
+    // already in effect rather than sending a garbage or huge request.
+    if (n == null) {
+      setCustomDraft(String(pageSize))
+      return
+    }
+    setCustomDraft(String(n))
+    if (n !== pageSize) void setPageSize(n)
+  }
 
   const rowCount = result?.rows.length ?? 0
   const firstRow = enabled ? (page - 1) * pageSize + 1 : 1
@@ -50,8 +77,11 @@ export function Paginator() {
           <label className="flex items-center gap-1.5 text-[var(--color-muted)]">
             Per page
             <select
-              value={pageSize}
-              onChange={(e) => void setPageSize(Number(e.target.value))}
+              value={customMode ? 'custom' : pageSize}
+              onChange={(e) => {
+                if (e.target.value === 'custom') setCustomMode(true)
+                else void setPageSize(Number(e.target.value))
+              }}
               className="rounded border border-[var(--color-border-strong)] bg-[var(--color-elevated)] px-1 py-0.5 outline-none"
             >
               {PAGE_SIZES.map((n) => (
@@ -59,7 +89,29 @@ export function Paginator() {
                   {n}
                 </option>
               ))}
+              <option value="custom">Custom…</option>
             </select>
+            {customMode && (
+              <input
+                value={customDraft}
+                onChange={(e) => setCustomDraft(e.target.value)}
+                onBlur={commitCustomSize}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    commitCustomSize()
+                    e.currentTarget.blur()
+                  }
+                }}
+                // Picking "Custom…" from the select should not require a
+                // separate Tab press to reach the box — this is a
+                // keyboard-driven app.
+                autoFocus
+                aria-label="Custom page size"
+                title={`Up to ${rowCap.toLocaleString()}`}
+                className="w-14 rounded border border-[var(--color-border-strong)] bg-[var(--color-elevated)] px-1 py-0.5 text-center outline-none"
+              />
+            )}
           </label>
 
           <div className="flex items-center gap-1">
