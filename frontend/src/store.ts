@@ -672,6 +672,23 @@ export const useStore = create<State>((set, get) => {
 })
 
 /**
+ * The dialect of the active connection, or null when nothing is connected.
+ *
+ * Derived rather than stored: the connection list is already the source of
+ * truth, and a second copy would be one more thing to keep in step. Used by
+ * the editors, which need it for both highlighting and per-dialect functions.
+ */
+export function useActiveKind(): Kind | null {
+  return useStore((s) => s.connections.find((c) => c.id === s.activeConnectionId)?.kind ?? null)
+}
+
+/** Whether the active dialect has schemas, so names are worth qualifying. */
+export function useHasSchemas(): boolean {
+  const kind = useActiveKind()
+  return useStore((s) => (kind ? (s.drivers?.[kind]?.hasSchemas ?? false) : false))
+}
+
+/**
  * The whole UI is sized in rem, so setting the root font size rescales
  * spacing and controls together rather than leaving big text in small boxes.
  */

@@ -1,14 +1,17 @@
-import { useRef } from 'react'
-import { useStore } from '../store'
+import { useMemo } from 'react'
+import { editorCandidates, tokenAt } from '../completion'
+import { useActiveKind, useHasSchemas, useStore } from '../store'
+import { Editor } from '../ui'
 import { useCellMenu } from './CellMenu'
 import { DataGrid } from './DataGrid'
 
 /**
  * SQL editor.
  *
- * A plain textarea for now, deliberately: it is keyboard-complete, has no
- * bundle cost and no focus quirks to fight. Monaco slots in behind the same
- * props when it earns its place — see the note in README.
+ * Now a real editor rather than a textarea: highlighting and completion over
+ * the objects in the open database, with Ctrl+Enter still running the
+ * statement and Tab still indenting. See ui/Editor.tsx for why CodeMirror and
+ * not Monaco.
  */
 export function SqlEditor() {
   const sqlText = useStore((s) => s.sqlText)
@@ -18,26 +21,20 @@ export function SqlEditor() {
   const busy = useStore((s) => s.busy)
   const setView = useStore((s) => s.setView)
   const openCell = useStore((s) => s.openCell)
+  const objects = useStore((s) => s.objects)
+  const columns = useStore((s) => s.columns)
+  const activeRef = useStore((s) => s.activeRef)
+  const kind = useActiveKind()
+  const hasSchemas = useHasSchemas()
   const cellMenu = useCellMenu('sql')
-  const ref = useRef<HTMLTextAreaElement>(null)
 
-  const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-      e.preventDefault()
-      void runSql()
-      return
-    }
-    // Tab indents rather than escaping the field — in an editor, leaving on
-    // Tab is never what you meant.
-    if (e.key === 'Tab') {
-      e.preventDefault()
-      const el = e.currentTarget
-      const { selectionStart: start, selectionEnd: end } = el
-      const next = `${sqlText.slice(0, start)}  ${sqlText.slice(end)}`
-      setSqlText(next)
-      requestAnimationFrame(() => el.setSelectionRange(start + 2, start + 2))
-    }
-  }
+  const completion = useMemo(
+    () => ({
+      options: editorCandidates({ columns, objects, kind, hasSchemas }, activeRef?.name),
+      tokenAt,
+    }),
+    [columns, objects, kind, hasSchemas, activeRef],
+  )
 
   return (
     <div className="flex h-full flex-col">
@@ -61,17 +58,21 @@ export function SqlEditor() {
         </button>
       </div>
 
-      <textarea
-        ref={ref}
-        autoFocus
-        value={sqlText}
-        onChange={(e) => setSqlText(e.target.value)}
-        onKeyDown={onKeyDown}
-        spellCheck={false}
-        placeholder="select * from …"
-        aria-label="SQL editor"
-        className="h-40 w-full shrink-0 resize-y border-b border-[var(--color-border)] bg-[var(--color-bg)] p-3 font-[var(--font-mono)] text-[0.78rem] leading-relaxed outline-none placeholder:text-[var(--color-faint)]"
-      />
+      {/* Fixed height with its own scrolling, as the textarea had. The editor
+          grows its own content area, so the height belongs on the wrapper. */}
+      <div className="h-40 shrink-0 overflow-auto border-b border-[var(--color-border)] bg-[var(--color-bg)]">
+        <Editor
+          autoFocus
+          value={sqlText}
+          onChange={setSqlText}
+          onSubmit={() => void runSql()}
+          dialect={kind}
+          completion={completion}
+          placeholder="select * from …"
+          ariaLabel="SQL editor"
+          className="p-3 text-[0.78rem] leading-relaxed"
+        />
+      </div>
 
       <div className="min-h-0 flex-1">
         {sqlResult ? (

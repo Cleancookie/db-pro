@@ -55,9 +55,12 @@ monitoring connection open for connections nobody is querying.
   be designed together, because a capped value needs a "fetch the whole thing"
   path before there is anything for a viewer to show. Includes the cell context
   menu. See `ARCHITECTURE.md` ("Long values").
+- **Autocomplete** — CodeMirror 6 behind `ui/Editor.tsx`, driving both the
+  filter box and the SQL editor. Candidates in `src/completion.ts`. Monaco was
+  costed and rejected; see `frontend/src/ui/README.md`.
 - **The activity tray** — always-visible bottom drawer, query ids, instrumented
   lifecycle status, ticking timers, cancel-with-confirmation, and a bounded
   query log. See `ARCHITECTURE.md` ("The activity tray").
 
-All four are recorded in full, request verbatim and decisions taken, in
+All five are recorded in full, request verbatim and decisions taken, in
 `REQUIREMENTS.md` under 2026-08-17.

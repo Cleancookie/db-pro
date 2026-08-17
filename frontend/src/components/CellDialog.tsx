@@ -147,7 +147,11 @@ export function CellDialog({ cell }: { cell: CellTarget }) {
         ) : tab === 'json' && parsed.ok ? (
           <JsonView value={parsed.value} />
         ) : (
-          <pre className="p-3 font-[var(--font-mono)] text-[0.75rem] leading-relaxed break-all whitespace-pre-wrap">
+          // Deliberately larger than the grid's 0.75rem. The grid is dense
+          // because it shows hundreds of rows at once; this dialog shows one
+          // value the user has stopped to read. Still in rem, so the root-size
+          // knob in Settings scales it with everything else.
+          <pre className="p-3 font-[var(--font-mono)] text-[0.875rem] leading-relaxed break-all whitespace-pre-wrap">
             {text}
           </pre>
         )}

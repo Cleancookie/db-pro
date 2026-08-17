@@ -197,6 +197,41 @@ ring within a minute.
 
 ---
 
+## 2026-08-17 — autocomplete, and the editor decision
+
+### Requested
+
+> I want auto complete help when I'm writing the where filter on tables or
+> maybe on the sql editor. maybe it's time for monaco editor? think about the
+> future too.
+
+Plus, separately: the cell viewer's text was too small against the global
+style. Fixed by moving the value body and the JSON tree to `0.875rem` — larger
+than the grid's `0.75rem` on purpose, because the grid is dense to show
+hundreds of rows and the viewer shows one value someone stopped to read. Still
+in rem, so the root-size knob in Settings scales it.
+
+### Decided
+
+| Question | Choice |
+| --- | --- |
+| Which editor | **CodeMirror 6**, not Monaco. Monaco is megabytes and wants a web worker, which is awkward with assets embedded in a Wails binary. CodeMirror is modular, worker-free, and ships per-dialect SQL |
+| Measured cost | **+121 kB gzipped** (124 → 245). Accepted: on disk it is nothing against a 21 MB exe, and the cost is startup parse time |
+| Lazy-load it? | No. The filter box is on screen as soon as a table is open, so it is needed almost immediately anyway |
+| Where the vendor lives | `frontend/src/ui/Editor.tsx` only, per the house rule. The narrow API is value/onChange/onSubmit/onCancel/singleLine/dialect/completion; no CodeMirror type is exported |
+| What can be completed | `src/completion.ts` — plain data, no editor API, so the candidate rules are unit-tested without a DOM |
+| Ranking | Columns of the open table first (primary key above its siblings), then tables and views, then functions, then keywords. A predicate is overwhelmingly about the columns in front of you |
+| Filter box candidates | Columns, predicate keywords, dialect functions — **no table names**, since the table is already chosen and offering it only pushes the columns down |
+| Editor candidates | The above plus objects in the database and statement keywords. Columns are still the open table's: knowing which table a half-typed statement means would need parsing, so the detail text names the table each column came from rather than pretending |
+| Key handling | Enter (filter) and Ctrl+Enter (editor) submit *only* when the popup is closed; Escape closes the popup first and reverts the filter second. Tab accepts a completion, else indents |
+| Caret inside a string literal | No popup at all. Completing a column name into `'act…'` would be wrong every time |
+
+`focusFilter` had to change: the filter is no longer an `<input>`, so focusing
+it through `document.getElementById` would land on a div. The editor registers a
+focus handle (`registerFilterFocus`) and Ctrl+F calls through it.
+
+---
+
 ## Invariants
 
 Things that are true on purpose. Breaking one should be a decision, not an

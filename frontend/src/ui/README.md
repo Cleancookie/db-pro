@@ -15,6 +15,26 @@ that guarantee is gone.
 | --- | --- | --- |
 | `Dialog.tsx` | `@radix-ui/react-dialog` | Focus trap, focus restore on close, scroll lock, `aria-modal` wiring, Escape and outside-click handling |
 | `Menu.tsx` | `@radix-ui/react-context-menu` | Arrow-key navigation, typeahead, collision-aware positioning, focus return to the trigger |
+| `Editor.tsx` | `@codemirror/*` | A completion popup with its own keyboard handling and positioning, dialect-aware SQL tokenising, undo history, and room for error squiggles later |
+
+### Why CodeMirror and not Monaco
+
+Monaco is the better-known answer and was rejected on cost. It is measured in
+megabytes against a bundle that was 124 kB gzipped, and it wants a web worker,
+which is awkward when assets are embedded in a Wails binary. CodeMirror 6 is
+modular enough to pay only for what is imported, needs no worker, and ships
+real per-dialect SQL support.
+
+It is still the largest dependency in the app — **+121 kB gzipped** — which is
+worth knowing before adding more of it. On disk that is nothing next to a 21 MB
+binary; the cost is parse and startup time. Lazy-loading it was considered and
+skipped: the filter box is on screen as soon as a table is open, so the editor
+is needed almost immediately anyway.
+
+The narrow API is `value`, `onChange`, `onSubmit`, `onCancel`, `singleLine`,
+`dialect` and `completion` — no CodeMirror type is exported, and the app's
+completion candidates (`src/completion.ts`) are plain data with no editor API
+in them, so they are unit-tested without a DOM and would survive a swap.
 
 ## What is deliberately NOT here
 

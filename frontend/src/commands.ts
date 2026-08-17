@@ -286,15 +286,25 @@ export function buildCommands(s: Store): Command[] {
   return cmds
 }
 
-/** The filter input owns this id so commands and hotkeys can both reach it. */
+/** The filter editor owns this id, for `aria` wiring and for tests. */
 export const FILTER_INPUT_ID = 'row-filter-input'
 
+/**
+ * Focusing the filter goes through a registered callback rather than the DOM.
+ *
+ * The filter is a CodeMirror editor, not an `<input>`, so `el.focus()` on the
+ * container would land on a div and `el.select()` does not exist. The editor
+ * registers its own handle here on mount, and the hotkey and the palette both
+ * call through it.
+ */
+let filterFocus: (() => void) | null = null
+
+export function registerFilterFocus(fn: (() => void) | null) {
+  filterFocus = fn
+}
+
 export function focusFilter() {
-  const el = document.getElementById(FILTER_INPUT_ID)
-  if (el instanceof HTMLInputElement) {
-    el.focus()
-    el.select()
-  }
+  filterFocus?.()
 }
 
 export function describeConnection(kind: string, host?: string, file?: string): string {

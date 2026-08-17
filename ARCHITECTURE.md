@@ -53,6 +53,14 @@ Deliberately *not* behind the layer: the command palette (its ranking in
 `fuzzy.ts` is the point of it), the data grid (virtualised), and native
 `<select>`/`<checkbox>` (already correct and accessible).
 
+The second thing behind the layer is `ui/Editor.tsx`, wrapping CodeMirror 6 for
+the SQL editor and the filter box. It is the app's largest dependency by some
+margin (+121 kB gzipped) and the reasoning — including why not Monaco — is in
+`frontend/src/ui/README.md`. The split worth preserving: *what* can be
+completed lives in `src/completion.ts` as plain data with no editor API in it,
+so the candidate rules are unit-tested without a DOM; only *how* it is offered
+is CodeMirror's business.
+
 One mismatch the layer absorbs: this app mounts a dialog already-open and
 unmounts it to close, so Radix's own open→closed transition never runs and its
 focus restore never fires. `ui/Dialog.tsx` captures the opener during first
