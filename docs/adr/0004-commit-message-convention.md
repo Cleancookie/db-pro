@@ -38,9 +38,12 @@ needs; those all land on 🛠️ here.
 The description keeps the existing style: imperative mood, capitalised, no
 trailing full stop.
 
-Enforced by `.githooks/commit-msg`, installed with `make hooks`. Git does not
-share hooks through a clone, so the install step is deliberate and the hook
-lives in a tracked directory rather than in `.git/hooks`.
+Not enforced mechanically. A `commit-msg` hook did this at first and was
+removed: a hook that rejects a commit after the message is written is invisible
+until it fires, needs a per-clone install step git will not do for you, and is
+one more piece of machinery to maintain for a four-line rule. The convention
+lives in `README.md` and `CLAUDE.md` instead, which is where a person or an
+agent writing a commit will already be looking.
 
 ## Consequences
 
@@ -57,8 +60,14 @@ lives in a tracked directory rather than in `.git/hooks`.
   nothing else.
 - Emoji in subject lines are one more thing that can render badly in a terminal
   or mail client. 🛠️ in particular carries a variation selector, so it is two
-  code points and can occupy one or two columns depending on the font. The hook
-  accepts it with or without the selector for that reason.
+  code points and can occupy one or two columns depending on the font. Either
+  form is acceptable in a subject; do not treat the bare 🛠 as wrong.
+- Nothing rejects a non-conforming commit, so the convention can drift — it
+  already did once before the hook existed. The mitigation is that both places
+  a commit gets written from now state the rule; the check is `git log
+  --oneline` during review, not a gate at commit time. If drift returns and the
+  docs are not enough, the answer is a check in CI over the pushed range rather
+  than a local hook — it needs no install step and reports where it can be seen.
 - History before this ADR is unconverted. Rewriting it was considered and
   rejected: the subjects are already descriptive, and rewriting shared history
   to add decoration is a bad trade.
