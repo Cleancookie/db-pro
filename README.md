@@ -84,6 +84,26 @@ cmd/devserver/      HTTP binding — the same, over JSON
 frontend/           React + TS + Vite + Tailwind
 ```
 
+## Committing
+
+Subjects start with one of four emoji, which names the size of the change and
+maps to a semver bump. `make hooks` installs a hook that enforces it.
+
+| | | |
+| --- | --- | --- |
+| 🔥 | breaking change | major |
+| ✨ | major change | major |
+| 🛠️ | minor change — refactor, docs, tooling | minor |
+| 🐛 | bug fix | patch |
+
+```
+✨ Add SQL autocomplete to the filter box and the editor
+🐛 Stop Enter in the filter box opening the cell viewer
+```
+
+Rationale, and the reason ✨ is major rather than minor, in
+[docs/adr/0004-commit-message-convention.md](docs/adr/0004-commit-message-convention.md).
+
 ## Credential storage
 
 Passwords currently live in `connections.json` (mode `0600`) under your user config

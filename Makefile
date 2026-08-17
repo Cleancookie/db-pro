@@ -34,6 +34,7 @@ help:
 	@echo '  make web          run the Vite dev server on :5173'
 	@echo
 	@echo '  make check        fmt + vet + typecheck + all tests'
+	@echo '  make hooks        install the commit-msg hook (once per clone)'
 	@echo '  make test         Go and frontend unit tests'
 	@echo '  make fmt          gofmt the Go sources'
 	@echo
@@ -139,6 +140,16 @@ db-down:
 .PHONY: db-reset
 db-reset:
 	docker compose --profile mssql down -v
+
+# --- git ---------------------------------------------------------------------------
+
+# Git does not carry hooks through a clone, so this has to be run once per
+# working copy. core.hooksPath points at the tracked directory rather than
+# copying, so an edit to the hook takes effect without reinstalling.
+.PHONY: hooks
+hooks:
+	git config core.hooksPath .githooks
+	@echo "hooks installed (core.hooksPath=.githooks)"
 
 # --- housekeeping ------------------------------------------------------------------
 
