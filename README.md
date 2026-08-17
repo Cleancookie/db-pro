@@ -35,6 +35,7 @@ MVP walking skeleton. Working end-to-end:
 | `Ctrl+R` | Refresh current result set |
 | `Ctrl+←` / `Ctrl+→` | Previous / next page |
 | `Enter` | Open the selected cell (full value, JSON tree) |
+| Right-click / `Menu` | Cell actions — open in viewer, copy value, copy full value |
 | `Esc` | Close palette / dialog, or blur the filter |
 
 ## Running it

@@ -4,6 +4,7 @@ import { transportName } from '../api'
 import { useStore } from '../store'
 import { ActivityPage } from './ActivityPage'
 import { CellDialog } from './CellDialog'
+import { useCellMenu } from './CellMenu'
 import { CommandPalette } from './CommandPalette'
 import { ConfirmDeleteDialog } from './ConnectionMenu'
 import { ConnectionDialog } from './ConnectionDialog'
@@ -32,6 +33,7 @@ export function App() {
   const toggleSort = useStore((s) => s.toggleSort)
   const setView = useStore((s) => s.setView)
   const openCell = useStore((s) => s.openCell)
+  const cellMenu = useCellMenu('browse')
 
   useEffect(() => {
     void init()
@@ -100,6 +102,7 @@ export function App() {
                     onSort={(c) => void toggleSort(c)}
                     rowOffset={paginationEnabled ? (page - 1) * pageSize : 0}
                     onOpenCell={(r, c) => openCell('browse', r, c)}
+                    cellMenu={cellMenu}
                   />
                 ) : (
                   <Placeholder text={busy ? 'Loading…' : 'No rows'} />

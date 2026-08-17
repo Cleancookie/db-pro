@@ -37,11 +37,13 @@ type Settings struct {
 // DefaultSettings is also the fallback for any field missing from disk.
 func DefaultSettings() Settings {
 	return Settings{
-		FontSizePx:         16,
-		DefaultPageSize:    100,
-		PaginationEnabled:  true,
-		RowCap:             100_000,
-		TextCapChars:       512,
+		FontSizePx:        16,
+		DefaultPageSize:   100,
+		PaginationEnabled: true,
+		RowCap:            100_000,
+		// ~1 kB, which is the figure DBeaver uses and the one that was asked
+		// for. Enough to recognise a value, far too little to slow a browse.
+		TextCapChars:       1024,
 		ShowSystemObjects:  false,
 		AutoCount:          true,
 		ConfirmDestructive: true,

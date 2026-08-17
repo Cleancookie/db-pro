@@ -152,7 +152,8 @@ a byte count rather than shipped to the frontend in full.
 ## Long values
 
 Text-shaped columns — `text`, `longtext`, `json`, `jsonb`, `nvarchar(max)`, … — are
-capped to `textCapChars` (Settings, 512 by default; 0 turns it off). Two layers, and
+capped to `textCapChars` (Settings, 1024 by default — roughly the 1 kB DBeaver uses;
+0 turns it off). Two layers, and
 the first is the one that matters:
 
 1. **In the emitted SQL.** `BuildSelect` replaces `SELECT *` with an explicit column
@@ -164,7 +165,7 @@ the first is the one that matters:
    `Driver`, which stays introspection-shaped.
 
    Which columns qualify is decided by `isLongTextType` from the introspected type
-   name *and the cap in force*: a `varchar(64)` cannot exceed a cap of 512, so it is
+   name *and the cap in force*: a `varchar(64)` cannot exceed a cap of 1024, so it is
    left alone and the list collapses back to `SELECT *` when nothing qualifies.
    Without column metadata — a view that cannot be introspected — there is nothing to
    rewrite and only layer 2 applies.

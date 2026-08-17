@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { api, errorMessage } from './api'
+import { absoluteRowOffset, cellText, isCellTruncated } from './cells'
 import type {
   ActivityResult,
   Capabilities,
@@ -59,7 +60,7 @@ export const DEFAULT_SETTINGS: Settings = {
   defaultPageSize: 100,
   paginationEnabled: true,
   rowCap: 100_000,
-  textCapChars: 512,
+  textCapChars: 1024,
   showSystemObjects: false,
   autoCount: true,
   confirmDestructive: true,
@@ -135,7 +136,17 @@ interface State {
   deleteConnection: (id: string) => Promise<void>
   setPaletteOpen: (open: boolean) => void
   setDialog: (d: DialogState) => void
+  /** Resolves a grid coordinate to a cell, or null if there is nothing there. */
+  cellTarget: (source: ResultSource, rowIndex: number, colIndex: number) => CellTarget | null
   openCell: (source: ResultSource, rowIndex: number, colIndex: number) => void
+  /** Copies a cell; `full` re-reads it uncapped first. */
+  copyCell: (
+    source: ResultSource,
+    rowIndex: number,
+    colIndex: number,
+    full?: boolean,
+  ) => Promise<void>
+  copyText: (text: string) => Promise<void>
   pushToast: (kind: Toast['kind'], message: string) => void
   dismissToast: (id: number) => void
 }
@@ -518,32 +529,72 @@ export const useStore = create<State>((set, get) => {
       set({ dialog })
     },
 
-    openCell(source, rowIndex, colIndex) {
+    cellTarget(source, rowIndex, colIndex) {
       const s = get()
       const rs = source === 'sql' ? s.sqlResult : s.result
-      if (!rs) return
+      if (!rs) return null
       const column = rs.columns[colIndex]
       const value = rs.rows[rowIndex]?.[colIndex]
-      if (!column || value === undefined) return
-      set({
-        dialog: {
-          kind: 'cell',
-          cell: {
-            column: column.name,
-            dbType: column.dbType,
-            value,
-            truncated: (rs.truncatedCells ?? []).some(
-              (c) => c.row === rowIndex && c.col === colIndex,
-            ),
-            // Page offset plus row index: the same absolute coordinate the
-            // gutter is showing, which is what ReadCell addresses rows by.
-            rowOffset:
-              source === 'browse' && s.activeRef
-                ? (s.paginationEnabled ? (s.page - 1) * s.pageSize : 0) + rowIndex
-                : null,
-          },
-        },
-      })
+      if (!column || value === undefined) return null
+      return {
+        column: column.name,
+        dbType: column.dbType,
+        value,
+        truncated: isCellTruncated(rs, rowIndex, colIndex),
+        // The same absolute coordinate the row gutter is showing, which is what
+        // ReadCell addresses rows by.
+        rowOffset:
+          source === 'browse' && s.activeRef
+            ? absoluteRowOffset(rowIndex, {
+                enabled: s.paginationEnabled,
+                page: s.page,
+                pageSize: s.pageSize,
+              })
+            : null,
+      }
+    },
+
+    openCell(source, rowIndex, colIndex) {
+      const cell = get().cellTarget(source, rowIndex, colIndex)
+      if (cell) set({ dialog: { kind: 'cell', cell } })
+    },
+
+    async copyCell(source, rowIndex, colIndex, full = false) {
+      const s = get()
+      const cell = s.cellTarget(source, rowIndex, colIndex)
+      if (!cell) return
+      let text = cellText(cell.value)
+
+      // Only worth a round trip when there is more to get: an untruncated cell
+      // is already whole in the grid.
+      if (full && cell.truncated && cell.rowOffset !== null && s.activeConnectionId && s.activeRef) {
+        try {
+          const res = await api.readCell({
+            connectionId: s.activeConnectionId,
+            ref: s.activeRef,
+            column: cell.column,
+            filter: s.filter,
+            orderBy: s.orderBy,
+            rowOffset: cell.rowOffset,
+          })
+          text = res.value ?? ''
+        } catch (e) {
+          s.pushToast('error', errorMessage(e))
+          return
+        }
+      }
+
+      await s.copyText(text)
+    },
+
+    async copyText(text) {
+      try {
+        await navigator.clipboard.writeText(text)
+      } catch {
+        // Clipboard access can be refused. Silence would look exactly like a
+        // menu item that does nothing.
+        get().pushToast('error', 'Could not write to the clipboard')
+      }
     },
 
     pushToast(kind, message) {
