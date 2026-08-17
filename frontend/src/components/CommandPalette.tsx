@@ -127,7 +127,7 @@ export function CommandPalette() {
           {/* Which palette this is, stated rather than implied: the two look
               otherwise identical, and typing into the wrong one is the obvious
               way to be confused by a split palette. */}
-          <span className="shrink-0 text-[0.625rem] font-semibold tracking-wider text-[var(--color-faint)] uppercase">
+          <span className="shrink-0 font-semibold tracking-wider text-[var(--color-faint)] uppercase">
             {mode === 'go' ? 'Go to' : 'Run'}
           </span>
           <input
@@ -140,9 +140,9 @@ export function CommandPalette() {
             }
             spellCheck={false}
             aria-label={mode === 'go' ? 'Go to' : 'Command'}
-            className="min-w-0 flex-1 bg-transparent py-3.5 text-[0.9375rem] outline-none placeholder:text-[var(--color-faint)]"
+            className="min-w-0 flex-1 bg-transparent py-3.5 outline-none placeholder:text-[var(--color-faint)]"
           />
-          <kbd className="shrink-0 rounded border border-[var(--color-border-strong)] px-1.5 py-0.5 font-[var(--font-mono)] text-[0.625rem] text-[var(--color-faint)]">
+          <kbd className="shrink-0 rounded border border-[var(--color-border-strong)] px-1.5 py-0.5 font-[var(--font-mono)] text-[var(--color-faint)]">
             Ctrl+Shift+P
           </kbd>
         </div>
@@ -160,7 +160,7 @@ export function CommandPalette() {
             return (
               <div key={item.id}>
                 {item.group !== prevGroup && (
-                  <div className="px-4 pt-2.5 pb-1 text-[0.625rem] font-semibold tracking-wider text-[var(--color-faint)] uppercase">
+                  <div className="px-4 pt-2.5 pb-1 font-semibold tracking-wider text-[var(--color-faint)] uppercase">
                     {item.group}
                   </div>
                 )}
@@ -180,13 +180,13 @@ export function CommandPalette() {
                       />
                     </span>
                     {item.subtitle && (
-                      <span className="block truncate text-[0.6875rem] text-[var(--color-muted)]">
+                      <span className="block truncate text-[var(--color-muted)]">
                         {item.subtitle}
                       </span>
                     )}
                   </span>
                   {item.shortcut && (
-                    <kbd className="shrink-0 rounded border border-[var(--color-border-strong)] px-1.5 py-0.5 font-[var(--font-mono)] text-[0.625rem] text-[var(--color-muted)]">
+                    <kbd className="shrink-0 rounded border border-[var(--color-border-strong)] px-1.5 py-0.5 font-[var(--font-mono)] text-[var(--color-muted)]">
                       {item.shortcut}
                     </kbd>
                   )}

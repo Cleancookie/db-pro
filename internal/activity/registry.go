@@ -68,12 +68,11 @@ func (p Phase) Terminal() bool {
 // session's scrollback, not an audit trail, and it is a hard bound so a
 // long-running app cannot grow it.
 //
-// Sized for the fact that *every* kind is retained, catalogue reads included.
-// Those were dropped originally, on the grounds that they would push the user's
-// own queries out of the ring — but a describe that is invisible is exactly
-// what makes the log untrustworthy ("I can see it running, it never appears").
-// So they are kept and the tray filters them out of the *view* by default,
-// which is a display choice the user can reverse rather than data thrown away.
+// Sized for the fact that *every* kind is retained and shown, catalogue reads
+// included. Those were dropped originally, then kept but hidden from the view;
+// both made the log untrustworthy ("I can see it running, it never appears").
+// The log now shows everything the app executed, so its only bound is this
+// ring.
 const historySize = 500
 
 // historySQLLimit caps the SQL kept per history entry. A ring of 200 editor

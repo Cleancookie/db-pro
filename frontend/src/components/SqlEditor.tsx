@@ -40,7 +40,7 @@ export function SqlEditor() {
   return (
     <div className="flex h-full flex-col">
       <div className="chrome flex items-center gap-2 border-b border-[var(--color-border)] bg-[var(--color-panel)] px-3 py-1.5">
-        <span className="text-[0.625rem] font-semibold tracking-wider text-[var(--color-faint)] uppercase">
+        <span className="font-semibold tracking-wider text-[var(--color-faint)] uppercase">
           SQL
         </span>
         {/* Which database the statement will run against. The connection is
@@ -49,7 +49,7 @@ export function SqlEditor() {
         {activeDatabase && (
           <span
             title="Statements run against this database — chosen in the sidebar"
-            className="max-w-[12rem] truncate rounded bg-[var(--color-elevated)] px-1.5 py-0.5 font-[var(--font-mono)] text-[0.625rem] text-[var(--color-muted)]"
+            className="max-w-[12rem] truncate rounded bg-[var(--color-elevated)] px-1.5 py-0.5 font-[var(--font-mono)] text-[var(--color-muted)]"
           >
             {activeDatabase}
           </span>
@@ -57,7 +57,7 @@ export function SqlEditor() {
         <button
           onClick={() => void runSql()}
           disabled={busy || !sqlText.trim()}
-          className="rounded border border-[var(--color-border-strong)] bg-[var(--color-elevated)] px-2 py-0.5 text-[0.6875rem] disabled:opacity-40 enabled:hover:border-[var(--color-accent)]"
+          className="rounded border border-[var(--color-border-strong)] bg-[var(--color-elevated)] px-2 py-0.5 disabled:opacity-40 enabled:hover:border-[var(--color-accent)]"
         >
           Run <span className="text-[var(--color-faint)]">Ctrl+Enter</span>
         </button>
@@ -82,7 +82,7 @@ export function SqlEditor() {
           completion={completion}
           placeholder="select * from …"
           ariaLabel="SQL editor"
-          className="p-3 text-[0.78rem] leading-relaxed"
+          className="p-3 leading-relaxed"
         />
       </div>
 

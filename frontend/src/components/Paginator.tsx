@@ -62,7 +62,7 @@ export function Paginator() {
   }
 
   return (
-    <div className="chrome flex items-center gap-3 border-t border-[var(--color-border)] bg-[var(--color-panel)] px-3 py-1.5 text-[0.6875rem]">
+    <div className="chrome flex items-center gap-3 border-t border-[var(--color-border)] bg-[var(--color-panel)] px-3 py-1.5">
       <label className="flex items-center gap-1.5 text-[var(--color-muted)]">
         <input
           type="checkbox"

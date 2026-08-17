@@ -42,7 +42,7 @@ export function ContextMenu({ items, heading, children, className }: ContextMenu
           collisionPadding={8}
         >
           {heading && (
-            <RadixContextMenu.Label className="truncate border-b border-[var(--color-border)] px-3 pt-1 pb-1.5 text-xs text-[var(--color-faint)]">
+            <RadixContextMenu.Label className="truncate border-b border-[var(--color-border)] px-3 pt-1 pb-1.5 text-[var(--color-faint)]">
               {heading}
             </RadixContextMenu.Label>
           )}

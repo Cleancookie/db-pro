@@ -21,16 +21,16 @@ export function ActivityPage() {
   return (
     <div className="flex h-full flex-col">
       <div className="chrome flex items-center gap-2 border-b border-[var(--color-border)] bg-[var(--color-panel)] px-3 py-1.5">
-        <span className="text-[0.625rem] font-semibold tracking-wider text-[var(--color-faint)] uppercase">
+        <span className="font-semibold tracking-wider text-[var(--color-faint)] uppercase">
           Connections
         </span>
-        <span className="text-xs text-[var(--color-faint)]">
+        <span className="text-[var(--color-faint)]">
           {activity.sessions.length} open connection
           {activity.sessions.length === 1 ? '' : 's'}
         </span>
         <button
           onClick={() => setTrayOpen(true)}
-          className="text-xs text-[var(--color-accent)] hover:underline"
+          className="text-[var(--color-accent)] hover:underline"
         >
           {activity.queries.filter(isRunning).length} running — show in the tray
         </button>
@@ -44,7 +44,7 @@ export function ActivityPage() {
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
-        <h3 className="mb-2 text-[0.625rem] font-semibold tracking-wider text-[var(--color-faint)] uppercase">
+        <h3 className="mb-2 font-semibold tracking-wider text-[var(--color-faint)] uppercase">
           Open connections
         </h3>
         {activity.sessions.length === 0 ? (
@@ -54,7 +54,7 @@ export function ActivityPage() {
         ) : (
           <table className="w-full border-collapse text-left">
             <thead>
-              <tr className="text-xs text-[var(--color-faint)]">
+              <tr className="text-[var(--color-faint)]">
                 <th className="border-b border-[var(--color-border)] py-1.5 pr-3 font-normal">
                   Connection
                 </th>
@@ -94,7 +94,7 @@ export function ActivityPage() {
                   <td className="border-b border-[var(--color-border)] py-1.5 text-right">
                     <button
                       onClick={() => void disconnect(s.connectionId)}
-                      className="rounded border border-[var(--color-border-strong)] px-2 py-0.5 text-xs hover:border-[var(--color-danger)] hover:text-[var(--color-danger)]"
+                      className="rounded border border-[var(--color-border-strong)] px-2 py-0.5 hover:border-[var(--color-danger)] hover:text-[var(--color-danger)]"
                     >
                       Disconnect
                     </button>

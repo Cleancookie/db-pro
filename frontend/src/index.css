@@ -21,6 +21,34 @@
   --color-warn: #e2b567;
 
   --font-mono: ui-monospace, 'Cascadia Code', 'JetBrains Mono', Menlo, Consolas, monospace;
+
+  /*
+   * One type size for the whole interface.
+   *
+   * There were nine sizes between 0.5625rem and 1rem, picked per component, and
+   * the drift was permanent: every new component invented its own. So the scale
+   * is collapsed — every size class resolves to 1rem, and the root size in
+   * Settings is the only knob. To make something stand out, reach for weight,
+   * colour, or spacing; never size.
+   *
+   * These also act as a backstop: a stray `text-xs` in new code is a no-op
+   * rather than a regression. Arbitrary values (`text-[0.75rem]`) bypass it, so
+   * those are the one thing to keep out of review.
+   */
+  --text-xs: 1rem;
+  --text-sm: 1rem;
+  --text-base: 1rem;
+  --text-lg: 1rem;
+  --text-xl: 1rem;
+  --text-2xl: 1rem;
+  --text-3xl: 1rem;
+  --text-xs--line-height: 1.4;
+  --text-sm--line-height: 1.4;
+  --text-base--line-height: 1.4;
+  --text-lg--line-height: 1.4;
+  --text-xl--line-height: 1.4;
+  --text-2xl--line-height: 1.4;
+  --text-3xl--line-height: 1.4;
 }
 
 html,
@@ -40,7 +68,9 @@ body {
   background: var(--color-bg);
   color: var(--color-text);
   font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  /* Everything inherits this. No component sets its own size — see @theme. */
   font-size: 1rem;
+  line-height: 1.4;
   /* The webview is a fixed app frame, not a document — page-level scrolling
      would detach the header from the grid. */
   overflow: hidden;

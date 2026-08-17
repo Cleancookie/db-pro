@@ -20,7 +20,7 @@ export function JsonView({ value }: { value: unknown }) {
   return (
     // Matches the cell dialog's text tab rather than the grid: both are for
     // reading one value, not for scanning many.
-    <div className="p-3 font-[var(--font-mono)] text-[0.875rem] leading-relaxed">
+    <div className="p-3 font-[var(--font-mono)] leading-relaxed">
       <Node name={null} value={value} depth={0} />
     </div>
   )

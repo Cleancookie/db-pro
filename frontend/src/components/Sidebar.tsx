@@ -78,7 +78,7 @@ export function Sidebar() {
       >
         <div className="max-h-52 overflow-y-auto px-1.5 pb-1.5">
           {connections.length === 0 && (
-            <p className="px-1.5 py-2 text-xs leading-relaxed text-[var(--color-faint)]">
+            <p className="px-1.5 py-2 leading-relaxed text-[var(--color-faint)]">
               No connections yet. Press{' '}
               <kbd className="rounded border border-[var(--color-border-strong)] px-1">
                 Ctrl+Shift+P
@@ -105,7 +105,7 @@ export function Sidebar() {
                   />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate">{c.name}</span>
-                    <span className="block truncate text-[0.6875rem] text-[var(--color-faint)]">
+                    <span className="block truncate text-[var(--color-faint)]">
                       {describeConnection(c.kind, c.host, c.file)}
                     </span>
                   </span>
@@ -131,7 +131,7 @@ export function Sidebar() {
                 placeholder="Filter databases…"
                 spellCheck={false}
                 aria-label="Filter databases"
-                className="mb-1 w-full rounded border border-[var(--color-border-strong)] bg-[var(--color-elevated)] px-1.5 py-1 text-xs outline-none placeholder:text-[var(--color-faint)]"
+                className="mb-1 w-full rounded border border-[var(--color-border-strong)] bg-[var(--color-elevated)] px-1.5 py-1 outline-none placeholder:text-[var(--color-faint)]"
               />
             )}
           </div>
@@ -170,20 +170,20 @@ export function Sidebar() {
               placeholder="Filter objects…"
               spellCheck={false}
               aria-label="Filter objects"
-              className="w-full rounded border border-[var(--color-border-strong)] bg-[var(--color-elevated)] px-1.5 py-1 text-xs outline-none placeholder:text-[var(--color-faint)]"
+              className="w-full rounded border border-[var(--color-border-strong)] bg-[var(--color-elevated)] px-1.5 py-1 outline-none placeholder:text-[var(--color-faint)]"
             />
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-3">
             {objects.length === 0 && (
-              <p className="px-1.5 py-2 text-xs text-[var(--color-faint)]">No objects</p>
+              <p className="px-1.5 py-2 text-[var(--color-faint)]">No objects</p>
             )}
             {GROUP_ORDER.map((type) => {
               const list = grouped.get(type)
               if (!list || list.length === 0) return null
               return (
                 <section key={type} className="mt-2">
-                  <h3 className="px-1.5 pb-0.5 text-[0.625rem] font-semibold tracking-wider text-[var(--color-faint)] uppercase">
+                  <h3 className="px-1.5 pb-0.5 font-semibold tracking-wider text-[var(--color-faint)] uppercase">
                     {GROUP_LABEL[type]} <span className="opacity-60">{list.length}</span>
                   </h3>
                   {list.map((o) => {
@@ -205,7 +205,7 @@ export function Sidebar() {
                         <span className="min-w-0 flex-1 truncate">{qualified}</span>
                         {o.rowEstimate != null && (
                           <span
-                            className="shrink-0 text-[0.625rem] text-[var(--color-faint)]"
+                            className="shrink-0 text-[var(--color-faint)]"
                             title="estimated row count"
                           >
                             ~{formatCount(o.rowEstimate)}
@@ -267,9 +267,9 @@ function Section({
         <button
           onClick={() => toggleSection(id)}
           aria-expanded={!collapsed}
-          className="flex flex-1 items-center gap-1 px-2 py-1.5 text-left text-[0.625rem] font-semibold tracking-wider text-[var(--color-faint)] uppercase hover:text-[var(--color-text)]"
+          className="flex flex-1 items-center gap-1 px-2 py-1.5 text-left font-semibold tracking-wider text-[var(--color-faint)] uppercase hover:text-[var(--color-text)]"
         >
-          <span className="inline-block w-3 shrink-0 text-[0.75rem]">{collapsed ? '▸' : '▾'}</span>
+          <span className="inline-block w-3 shrink-0">{collapsed ? '▸' : '▾'}</span>
           {label}
           {count != null && <span className="opacity-60">{count}</span>}
         </button>

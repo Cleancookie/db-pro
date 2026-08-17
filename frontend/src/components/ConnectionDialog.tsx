@@ -199,12 +199,12 @@ export function ConnectionDialog({ existing }: { existing: Connection | null }) 
         </div>
 
         {test.state === 'failed' && (
-          <p className="mx-4 mb-3 rounded border border-[var(--color-danger)]/50 bg-[var(--color-danger)]/10 px-3 py-2 font-[var(--font-mono)] text-[0.6875rem] break-words text-[var(--color-danger)]">
+          <p className="mx-4 mb-3 rounded border border-[var(--color-danger)]/50 bg-[var(--color-danger)]/10 px-3 py-2 font-[var(--font-mono)] break-words text-[var(--color-danger)]">
             {test.message}
           </p>
         )}
         {test.state === 'ok' && (
-          <p className="mx-4 mb-3 text-[0.6875rem] text-[var(--color-success)]">Connected successfully</p>
+          <p className="mx-4 mb-3 text-[var(--color-success)]">Connected successfully</p>
         )}
 
     </FormDialog>
@@ -225,7 +225,7 @@ function Field({
 }) {
   return (
     <label className={`block ${className}`}>
-      <span className="mb-1 block text-[0.625rem] font-semibold tracking-wider text-[var(--color-faint)] uppercase">
+      <span className="mb-1 block font-semibold tracking-wider text-[var(--color-faint)] uppercase">
         {label}
       </span>
       {children}

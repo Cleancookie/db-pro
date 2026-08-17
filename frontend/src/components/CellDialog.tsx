@@ -86,10 +86,10 @@ export function CellDialog({ cell }: { cell: CellTarget }) {
       title={
         <span className="flex items-baseline gap-2">
           <span className="font-[var(--font-mono)]">{cell.column}</span>
-          <span className="text-xs font-normal text-[var(--color-faint)]">{cell.dbType}</span>
+          <span className="font-normal text-[var(--color-faint)]">{cell.dbType}</span>
           {/* The size the database reported once it has been fetched;
               until then, the size of what is on screen. */}
-          <span className="text-xs font-normal text-[var(--color-muted)]">
+          <span className="font-normal text-[var(--color-muted)]">
             {formatBytes(bytes ?? text.length)}
           </span>
         </span>
@@ -124,7 +124,7 @@ export function CellDialog({ cell }: { cell: CellTarget }) {
           title={parsed.ok ? undefined : `Not shown as JSON: ${parsed.reason}`}
           onClick={() => setPinnedTab('json')}
         />
-        <span className="ml-auto text-xs text-[var(--color-faint)]">
+        <span className="ml-auto text-[var(--color-faint)]">
           {loading
             ? 'fetching the full value…'
             : error
@@ -151,7 +151,7 @@ export function CellDialog({ cell }: { cell: CellTarget }) {
           // because it shows hundreds of rows at once; this dialog shows one
           // value the user has stopped to read. Still in rem, so the root-size
           // knob in Settings scales it with everything else.
-          <pre className="p-3 font-[var(--font-mono)] text-[0.875rem] leading-relaxed break-all whitespace-pre-wrap">
+          <pre className="p-3 font-[var(--font-mono)] leading-relaxed break-all whitespace-pre-wrap">
             {text}
           </pre>
         )}
@@ -163,7 +163,7 @@ export function CellDialog({ cell }: { cell: CellTarget }) {
       {cell.truncated && cell.rowOffset === null && (
         // Ad-hoc SQL results have no table to go back to, so there is nothing
         // to re-read. Saying so beats a button that cannot work.
-        <p className="border-t border-[var(--color-border)] px-4 py-2 text-xs text-[var(--color-muted)]">
+        <p className="border-t border-[var(--color-border)] px-4 py-2 text-[var(--color-muted)]">
           This value was cut to keep the result small. Re-run the statement with the cap turned off
           in Settings to see it whole.
         </p>
@@ -191,7 +191,7 @@ function Tab({
       onClick={onClick}
       disabled={disabled}
       title={title}
-      className={`rounded px-2 py-0.5 text-xs ${
+      className={`rounded px-2 py-0.5 ${
         active
           ? 'bg-[var(--color-accent-dim)] text-[var(--color-text)]'
           : 'text-[var(--color-muted)] disabled:opacity-40 enabled:hover:bg-[var(--color-elevated)]'

@@ -67,7 +67,7 @@ export function SettingsDialog() {
                   className="flex-1"
                   aria-label="Interface size"
                 />
-                <span className="w-12 shrink-0 text-right font-[var(--font-mono)] text-xs text-[var(--color-muted)]">
+                <span className="w-12 shrink-0 text-right font-[var(--font-mono)] text-[var(--color-muted)]">
                   {draft.fontSizePx}px
                 </span>
               </div>
@@ -189,7 +189,7 @@ const selectClass =
 function Group({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <section className="border-b border-[var(--color-border)] px-4 py-3 last:border-b-0">
-      <h3 className="mb-2 text-[0.625rem] font-semibold tracking-wider text-[var(--color-faint)] uppercase">
+      <h3 className="mb-2 font-semibold tracking-wider text-[var(--color-faint)] uppercase">
         {label}
       </h3>
       <div className="flex flex-col gap-3">{children}</div>
@@ -211,7 +211,7 @@ function Row({
       <span className="min-w-0 flex-1">
         <span className="block">{label}</span>
         {hint && (
-          <span className="block text-xs leading-relaxed text-[var(--color-faint)]">{hint}</span>
+          <span className="block leading-relaxed text-[var(--color-faint)]">{hint}</span>
         )}
       </span>
       <span className="shrink-0 pt-0.5">{control}</span>

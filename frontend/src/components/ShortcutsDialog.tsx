@@ -40,7 +40,7 @@ export function ShortcutsDialog() {
       <dl className="p-4">
         {SHORTCUTS.map(([key, what]) => (
           <div key={key} className="flex items-baseline gap-4 py-1">
-            <dt className="w-44 shrink-0 font-[var(--font-mono)] text-[0.6875rem] text-[var(--color-accent)]">
+            <dt className="w-44 shrink-0 font-[var(--font-mono)] text-[var(--color-accent)]">
               {key}
             </dt>
             <dd className="text-[var(--color-muted)]">{what}</dd>

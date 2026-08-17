@@ -60,12 +60,12 @@ export function FilterBar() {
       {activeRef && (
         <span
           title={qualified}
-          className="max-w-[14rem] shrink-0 truncate font-[var(--font-mono)] text-[0.6875rem] text-[var(--color-muted)]"
+          className="max-w-[14rem] shrink-0 truncate font-[var(--font-mono)] text-[var(--color-muted)]"
         >
           {qualified}
         </span>
       )}
-      <span className="shrink-0 font-[var(--font-mono)] text-[0.6875rem] text-[var(--color-faint)]">
+      <span className="shrink-0 font-[var(--font-mono)] text-[var(--color-faint)]">
         WHERE
       </span>
       <Editor
@@ -84,12 +84,12 @@ export function FilterBar() {
         completion={completion}
         placeholder="status = 'active' and created_at > now() - interval '7 days'"
         ariaLabel="Row filter, raw SQL after WHERE"
-        className={`min-w-0 flex-1 rounded border bg-[var(--color-elevated)] px-2 py-1 text-[0.75rem] ${
+        className={`min-w-0 flex-1 rounded border bg-[var(--color-elevated)] px-2 py-1 ${
           dirty ? 'border-[var(--color-warn)]' : 'border-[var(--color-border-strong)]'
         }`}
       />
       {dirty && (
-        <span className="shrink-0 text-[0.625rem] text-[var(--color-warn)]">Enter to apply</span>
+        <span className="shrink-0 text-[var(--color-warn)]">Enter to apply</span>
       )}
       {filter && !dirty && (
         <button

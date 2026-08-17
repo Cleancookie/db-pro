@@ -24,7 +24,7 @@ export function Toasts() {
           }`}
         >
           <span
-            className={`flex-1 font-[var(--font-mono)] text-xs leading-relaxed break-words ${
+            className={`flex-1 font-[var(--font-mono)] leading-relaxed break-words ${
               t.kind === 'error' ? 'text-[var(--color-danger)]' : 'text-[var(--color-text)]'
             }`}
           >
@@ -77,7 +77,7 @@ export function CopyButton({ text, label = 'Copy' }: { text: string; label?: str
       onClick={() => void copy()}
       aria-label={`${label} to clipboard`}
       title={`${label} to clipboard`}
-      className="shrink-0 rounded border border-[var(--color-border-strong)] px-1.5 py-0.5 text-xs text-[var(--color-muted)] hover:border-[var(--color-accent)] hover:text-[var(--color-text)]"
+      className="shrink-0 rounded border border-[var(--color-border-strong)] px-1.5 py-0.5 text-[var(--color-muted)] hover:border-[var(--color-accent)] hover:text-[var(--color-text)]"
     >
       {copied ? 'Copied' : label}
     </button>

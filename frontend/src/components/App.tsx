@@ -108,7 +108,7 @@ function Placeholder({ text }: { text: string }) {
 
 function Key({ children }: { children: React.ReactNode }) {
   return (
-    <kbd className="rounded border border-[var(--color-border-strong)] px-1.5 py-0.5 font-[var(--font-mono)] text-xs">
+    <kbd className="rounded border border-[var(--color-border-strong)] px-1.5 py-0.5 font-[var(--font-mono)]">
       {children}
     </kbd>
   )
@@ -117,7 +117,7 @@ function Key({ children }: { children: React.ReactNode }) {
 function EmptyState() {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 text-[var(--color-faint)]">
-      <p className="text-lg">Nothing open</p>
+      <p className="font-semibold">Nothing open</p>
       {/* With no top bar, this is where the two palettes are advertised. It is
           the first screen of a palette-first app, so it had better say how. */}
       <p className="flex items-center gap-2">

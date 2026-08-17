@@ -1,13 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { transportName } from '../api'
 import { LIMITS, Resizer, useResizable } from './Resizer'
-import {
-  elapsedFor,
-  hiddenCatalogueCount,
-  isRunning,
-  trayStatus,
-  visibleQueries,
-} from '../activity'
+import { elapsedFor, isRunning, trayStatus } from '../activity'
 import { formatCount, formatDuration } from '../commands'
 import { useStore } from '../store'
 import { Dialog, dialogButton } from '../ui'
@@ -65,11 +59,6 @@ export function ActivityTray() {
   const refresh = useStore((s) => s.refreshActivity)
   const clearHistory = useStore((s) => s.clearQueryHistory)
 
-  // Off by default: catalogue reads fire on every table open and would bury
-  // the queries the user actually ran. Local state rather than a saved
-  // setting — it is a way of looking at the log, not a preference about how
-  // the app behaves.
-  const [showCatalogue, setShowCatalogue] = useState(false)
   const resize = useResizable('trayHeightPx', LIMITS.tray)
 
   // The app is the only thing that issues queries, so its own count of
@@ -80,8 +69,6 @@ export function ActivityTray() {
   usePolling(inFlight > 0, refresh)
   const now = useTicker(queries.some(isRunning))
   const status = trayStatus(queries, polledAt, now)
-  const shown = visibleQueries(queries, showCatalogue)
-  const hidden = hiddenCatalogueCount(queries)
 
   const label =
     status.running === 0
@@ -105,7 +92,7 @@ export function ActivityTray() {
           <Resizer {...resize} axis="y" invert label="Resize the activity tray" className="top-0" />
           {/* Column widths are repeated in QueryRow. Fixed rather than a grid
               so a row appearing cannot shift the columns of the rest. */}
-          <div className="flex shrink-0 items-center gap-2 border-b border-[var(--color-border)] px-3 py-1 text-[0.625rem] tracking-wider text-[var(--color-faint)] uppercase">
+          <div className="flex shrink-0 items-center gap-2 border-b border-[var(--color-border)] px-3 py-1 tracking-wider text-[var(--color-faint)] uppercase">
             <span className="w-12 shrink-0">ID</span>
             <span className="w-16 shrink-0">Kind</span>
             <span className="w-32 shrink-0">Status</span>
@@ -113,19 +100,6 @@ export function ActivityTray() {
             <span className="min-w-0 flex-1">Query</span>
             <span className="w-14 shrink-0" />
             <span className="w-14 shrink-0 text-right">Time</span>
-            {/* Always rendered, so the header does not reflow the first time a
-                catalogue read lands. Disabled when there is nothing to reveal. */}
-            <button
-              onClick={() => setShowCatalogue(!showCatalogue)}
-              disabled={hidden === 0 && !showCatalogue}
-              aria-pressed={showCatalogue}
-              title="Catalogue reads are the app describing tables for the tree and for autocomplete"
-              className={`shrink-0 rounded px-1.5 py-0.5 tracking-normal normal-case disabled:opacity-30 enabled:hover:bg-[var(--color-elevated)] ${
-                showCatalogue ? 'text-[var(--color-text)]' : ''
-              }`}
-            >
-              {showCatalogue ? 'hide catalogue' : `catalogue${hidden > 0 ? ` (${hidden})` : ''}`}
-            </button>
             <button
               onClick={() => void clearHistory()}
               disabled={status.finished === 0}
@@ -135,13 +109,11 @@ export function ActivityTray() {
             </button>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto">
-            {shown.length === 0 ? (
-              <p className="px-3 py-4 text-center text-xs text-[var(--color-faint)]">
-                {hidden > 0 ? `${hidden} catalogue reads, hidden` : 'No queries yet'}
-              </p>
+            {queries.length === 0 ? (
+              <p className="px-3 py-4 text-center text-[var(--color-faint)]">No queries yet</p>
             ) : (
               <ul className="flex flex-col">
-                {shown.map((q) => (
+                {queries.map((q) => (
                   <QueryRow key={q.id} query={q} polledAt={polledAt} now={now} />
                 ))}
               </ul>
@@ -155,7 +127,7 @@ export function ActivityTray() {
         onClick={() => setTrayOpen(!open)}
         aria-expanded={open}
         title="Query activity (Ctrl+J)"
-        className="flex h-6 w-full items-center gap-2 px-3 text-[0.6875rem] hover:bg-[var(--color-elevated)]"
+        className="flex h-6 w-full items-center gap-2 px-3 hover:bg-[var(--color-elevated)]"
       >
         <span className="text-[var(--color-faint)]">{open ? '▾' : '▸'}</span>
         <span className="font-semibold tracking-wider text-[var(--color-faint)] uppercase">
@@ -223,7 +195,7 @@ function QueryRow({
 
   return (
     <li
-      className={`flex items-center gap-2 border-b border-[var(--color-border)] px-3 py-1 text-xs last:border-b-0 ${
+      className={`flex items-center gap-2 border-b border-[var(--color-border)] px-3 py-1 last:border-b-0 ${
         running ? '' : 'text-[var(--color-faint)]'
       }`}
     >
@@ -327,7 +299,7 @@ export function ConfirmCancelDialog({ queryId, sql }: { queryId: string; sql: st
           The statement is stopped at the server. A write that is part-way through is rolled back by
           the database, not by this app.
         </p>
-        <pre className="max-h-32 overflow-auto rounded bg-[var(--color-bg)] p-2 font-[var(--font-mono)] text-xs whitespace-pre-wrap text-[var(--color-muted)]">
+        <pre className="max-h-32 overflow-auto rounded bg-[var(--color-bg)] p-2 font-[var(--font-mono)] whitespace-pre-wrap text-[var(--color-muted)]">
           {sql}
         </pre>
       </div>
