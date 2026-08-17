@@ -5,6 +5,7 @@ package api
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/alexlaw/db-pro/internal/config"
 	"github.com/alexlaw/db-pro/internal/driver"
 	"github.com/alexlaw/db-pro/internal/engine"
+	"github.com/alexlaw/db-pro/internal/query"
 )
 
 // testConnectionTimeout bounds the "Test connection" button so a wrong host
@@ -24,10 +26,43 @@ type Service struct {
 	settings *config.SettingsStore
 	engine   *engine.Engine
 	activity *activity.Registry
+	// runner is the only way this package runs anything against a database.
+	// See internal/query: tracking and logging are middleware there rather
+	// than repeated at every call site.
+	runner *query.Runner
 }
 
 func New(store *config.Store, settings *config.SettingsStore, eng *engine.Engine, act *activity.Registry) *Service {
-	return &Service{store: store, settings: settings, engine: eng, activity: act}
+	return &Service{
+		store:    store,
+		settings: settings,
+		engine:   eng,
+		activity: act,
+		runner: query.New(
+			// Tracking first, so it is outermost: it supplies the cancellable
+			// context everything else runs under, and assigns the id the log
+			// lines share with the tray.
+			query.Tracking(act),
+			query.Logging(logQuery),
+		),
+	}
+}
+
+// logQuery is the default log sink: one line per finished query, at a level
+// that depends on the outcome. Deliberately plain `log` — this app has no
+// logging framework and a query log is not a reason to add one.
+func logQuery(e query.Entry) {
+	switch {
+	case e.Err != nil:
+		log.Printf("query %s %s db=%q failed in %s: %v",
+			e.Op.ID, e.Op.Kind, e.Op.Database, e.Elapsed.Round(time.Millisecond), e.Err)
+	case e.RowsRead > 0:
+		log.Printf("query %s %s db=%q %d rows in %s",
+			e.Op.ID, e.Op.Kind, e.Op.Database, e.RowsRead, e.Elapsed.Round(time.Millisecond))
+	default:
+		log.Printf("query %s %s db=%q ok in %s",
+			e.Op.ID, e.Op.Kind, e.Op.Database, e.Elapsed.Round(time.Millisecond))
+	}
 }
 
 func (s *Service) Shutdown() { s.engine.Shutdown() }
@@ -173,10 +208,17 @@ func (s *Service) Connect(ctx context.Context, connID string) (*ConnectResult, e
 		return out, nil
 	}
 
-	qctx, done := s.activity.Begin(ctx, connID, conn.Database, activity.KindIntrospect, "list databases")
-	activity.SetPhase(qctx, activity.PhaseExecuting)
-	dbs, err := sess.Driver.ListDatabases(qctx, sess.DB)
-	done(err)
+	var dbs []driver.Database
+	err = s.runner.Do(ctx, query.Op{
+		ConnectionID: connID,
+		Database:     conn.Database,
+		Kind:         activity.KindIntrospect,
+		SQL:          "list databases",
+	}, func(qctx context.Context) error {
+		var err error
+		dbs, err = sess.Driver.ListDatabases(qctx, sess.DB)
+		return err
+	})
 	if err != nil {
 		return nil, fmt.Errorf("listing databases: %w", err)
 	}
@@ -227,13 +269,16 @@ func (s *Service) ListDatabases(ctx context.Context, connID string) ([]driver.Da
 		return []driver.Database{{Name: "main"}}, nil
 	}
 
-	qctx, done := s.activity.Begin(ctx, connID, "", activity.KindIntrospect, "list databases")
-	// Deferred with the error rather than called inline: a panic must not leave
-	// the query listed as running forever.
-	defer func() { done(err) }()
-	activity.SetPhase(qctx, activity.PhaseExecuting)
-	dbs, err := sess.Driver.ListDatabases(qctx, sess.DB)
-	if err != nil {
+	var dbs []driver.Database
+	if err := s.runner.Do(ctx, query.Op{
+		ConnectionID: connID,
+		Kind:         activity.KindIntrospect,
+		SQL:          "list databases",
+	}, func(qctx context.Context) error {
+		var err error
+		dbs, err = sess.Driver.ListDatabases(qctx, sess.DB)
+		return err
+	}); err != nil {
 		return nil, err
 	}
 	return s.filterDatabases(sess.Driver.Kind(), dbs), nil
@@ -245,11 +290,17 @@ func (s *Service) ListObjects(ctx context.Context, connID, database string) ([]d
 		return nil, err
 	}
 
-	qctx, done := s.activity.Begin(ctx, connID, database, activity.KindIntrospect, "list objects")
-	defer func() { done(err) }()
-	activity.SetPhase(qctx, activity.PhaseExecuting)
-	objs, err := sess.Driver.ListObjects(qctx, sess.DB, database)
-	if err != nil {
+	var objs []driver.SchemaObject
+	if err := s.runner.Do(ctx, query.Op{
+		ConnectionID: connID,
+		Database:     database,
+		Kind:         activity.KindIntrospect,
+		SQL:          "list objects",
+	}, func(qctx context.Context) error {
+		var err error
+		objs, err = sess.Driver.ListObjects(qctx, sess.DB, database)
+		return err
+	}); err != nil {
 		return nil, err
 	}
 
@@ -270,11 +321,17 @@ func (s *Service) ListColumns(ctx context.Context, connID string, ref driver.Obj
 		return nil, err
 	}
 
-	qctx, done := s.activity.Begin(ctx, connID, ref.Database, activity.KindIntrospect, "describe "+ref.Name)
-	defer func() { done(err) }()
-	activity.SetPhase(qctx, activity.PhaseExecuting)
-	cols, err := sess.Driver.ListColumns(qctx, sess.DB, ref)
-	if err != nil {
+	var cols []driver.Column
+	if err := s.runner.Do(ctx, query.Op{
+		ConnectionID: connID,
+		Database:     ref.Database,
+		Kind:         activity.KindIntrospect,
+		SQL:          "describe " + qualify(ref),
+	}, func(qctx context.Context) error {
+		var err error
+		cols, err = sess.Driver.ListColumns(qctx, sess.DB, ref)
+		return err
+	}); err != nil {
 		return nil, err
 	}
 	if cols == nil {
@@ -342,18 +399,26 @@ func (s *Service) ReadRows(ctx context.Context, req ReadRowsRequest) (*ReadRowsR
 		opts.Offset = (page - 1) * size
 	}
 
-	query, err := sess.Driver.BuildSelect(req.Ref, opts, cols)
+	// Named stmt, not query: `query` is the package that runs it.
+	stmt, err := sess.Driver.BuildSelect(req.Ref, opts, cols)
 	if err != nil {
 		return nil, err
 	}
 
-	qctx, done := s.activity.Begin(ctx, req.ConnectionID, req.Ref.Database, activity.KindBrowse, query)
-	defer func() { done(err) }()
-	rs, err := driver.RunQuery(qctx, sess.DB, query, driver.QueryOptions{
-		RowCap:  settings.RowCap,
-		TextCap: settings.TextCapChars,
-	})
-	if err != nil {
+	var rs *driver.ResultSet
+	if err := s.runner.Do(ctx, query.Op{
+		ConnectionID: req.ConnectionID,
+		Database:     req.Ref.Database,
+		Kind:         activity.KindBrowse,
+		SQL:          stmt,
+	}, func(qctx context.Context) error {
+		var err error
+		rs, err = driver.RunQuery(qctx, sess.DB, stmt, driver.QueryOptions{
+			RowCap:  settings.RowCap,
+			TextCap: settings.TextCapChars,
+		})
+		return err
+	}); err != nil {
 		return nil, err
 	}
 
@@ -414,7 +479,7 @@ func (s *Service) ReadCell(ctx context.Context, req ReadCellRequest) (*driver.Ce
 	}
 
 	// TextCap is deliberately absent: this call exists to defeat it.
-	query, err := sess.Driver.BuildSelect(req.Ref, driver.ReadOptions{
+	stmt, err := sess.Driver.BuildSelect(req.Ref, driver.ReadOptions{
 		Filter:  req.Filter,
 		OrderBy: req.OrderBy,
 		Select:  []string{req.Column},
@@ -425,10 +490,29 @@ func (s *Service) ReadCell(ctx context.Context, req ReadCellRequest) (*driver.Ce
 		return nil, err
 	}
 
-	qctx, done := s.activity.Begin(ctx, req.ConnectionID, req.Ref.Database, activity.KindBrowse, query)
-	defer func() { done(err) }()
-	cell, err := driver.ReadCell(qctx, sess.DB, query, driver.MaxCellBytes)
-	return cell, err
+	var cell *driver.Cell
+	if err := s.runner.Do(ctx, query.Op{
+		ConnectionID: req.ConnectionID,
+		Database:     req.Ref.Database,
+		Kind:         activity.KindBrowse,
+		SQL:          stmt,
+	}, func(qctx context.Context) error {
+		var err error
+		cell, err = driver.ReadCell(qctx, sess.DB, stmt, driver.MaxCellBytes)
+		return err
+	}); err != nil {
+		return nil, err
+	}
+	return cell, nil
+}
+
+// qualify names an object the way the user sees it in the tree, so an activity
+// row reads "describe auth.users" rather than an ambiguous bare table name.
+func qualify(ref driver.ObjectRef) string {
+	if ref.Schema == "" {
+		return ref.Name
+	}
+	return ref.Schema + "." + ref.Name
 }
 
 func hasColumn(cols []driver.Column, name string) bool {
@@ -455,12 +539,16 @@ func (s *Service) CountRows(ctx context.Context, req CountRowsRequest) (int64, e
 		return 0, err
 	}
 	q := sess.Driver.BuildCount(req.Ref, req.Filter)
-	qctx, done := s.activity.Begin(ctx, req.ConnectionID, req.Ref.Database, activity.KindCount, q)
-	defer func() { done(err) }()
-	activity.SetPhase(qctx, activity.PhaseExecuting)
 
 	var n int64
-	if err = sess.DB.QueryRowContext(qctx, q).Scan(&n); err != nil {
+	if err := s.runner.Do(ctx, query.Op{
+		ConnectionID: req.ConnectionID,
+		Database:     req.Ref.Database,
+		Kind:         activity.KindCount,
+		SQL:          q,
+	}, func(qctx context.Context) error {
+		return sess.DB.QueryRowContext(qctx, q).Scan(&n)
+	}); err != nil {
 		return 0, err
 	}
 	return n, nil
@@ -486,30 +574,36 @@ func (s *Service) RunSQL(ctx context.Context, req RunSQLRequest) (*driver.Result
 		return nil, err
 	}
 
-	qctx, done := s.activity.Begin(ctx, req.ConnectionID, req.Database, activity.KindQuery, stmt)
-	defer func() { done(err) }()
-
 	settings := s.settings.Get()
 	maxRows := req.MaxRows
 	if maxRows <= 0 {
 		maxRows = settings.RowCap
 	}
+
 	var rs *driver.ResultSet
-	if returnsRows(stmt) {
-		// The editor's SQL is the user's own text and must not be rewritten,
-		// so the text cap here is applied while scanning. It keeps the grid
-		// responsive; it cannot keep the bytes off the wire.
-		//
-		// Assigned rather than returned directly so the deferred done(err)
-		// records a failed statement as failed.
-		rs, err = driver.RunQuery(qctx, sess.DB, stmt, driver.QueryOptions{
-			RowCap:  maxRows,
-			TextCap: settings.TextCapChars,
-		})
-	} else {
-		rs, err = driver.Exec(qctx, sess.DB, stmt)
+	if err := s.runner.Do(ctx, query.Op{
+		ConnectionID: req.ConnectionID,
+		Database:     req.Database,
+		Kind:         activity.KindQuery,
+		SQL:          stmt,
+	}, func(qctx context.Context) error {
+		var err error
+		if returnsRows(stmt) {
+			// The editor's SQL is the user's own text and must not be
+			// rewritten, so the text cap here is applied while scanning. It
+			// keeps the grid responsive; it cannot keep the bytes off the wire.
+			rs, err = driver.RunQuery(qctx, sess.DB, stmt, driver.QueryOptions{
+				RowCap:  maxRows,
+				TextCap: settings.TextCapChars,
+			})
+		} else {
+			rs, err = driver.Exec(qctx, sess.DB, stmt)
+		}
+		return err
+	}); err != nil {
+		return nil, err
 	}
-	return rs, err
+	return rs, nil
 }
 
 // returnsRows guesses from the leading keyword whether to use Query or Exec.

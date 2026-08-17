@@ -29,6 +29,27 @@ export function elapsedFor(q: QueryInfo, polledAt: number, now: number): number 
   return q.elapsedMs + Math.max(0, now - polledAt)
 }
 
+/**
+ * The log the tray shows.
+ *
+ * Go retains every kind, catalogue reads included — a describe that vanishes
+ * the moment it finishes is what made the log untrustworthy. But those fire on
+ * every table open and tree expansion, so by default they are filtered out of
+ * the *view*: the data is there and one toggle away, rather than discarded.
+ *
+ * Anything still running is always shown, whatever its kind. A slow
+ * `information_schema` query is exactly the thing worth seeing.
+ */
+export function visibleQueries(queries: QueryInfo[], showCatalogue: boolean): QueryInfo[] {
+  if (showCatalogue) return queries
+  return queries.filter((q) => q.kind !== 'introspect' || isRunning(q))
+}
+
+/** How many catalogue rows the filter is currently hiding. */
+export function hiddenCatalogueCount(queries: QueryInfo[]): number {
+  return queries.length - visibleQueries(queries, false).length
+}
+
 /** What the collapsed strip has to say without expanding anything. */
 export interface TrayStatus {
   running: number

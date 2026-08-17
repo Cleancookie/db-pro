@@ -1,5 +1,6 @@
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { isTypingTarget } from '../dom'
 import { useStore } from '../store'
 import { ContextMenu, type MenuItem } from '../ui'
 import type { Cell, Column, ResultSet, Sort } from '../types'
@@ -126,13 +127,7 @@ export function DataGrid({
       // A cell stays selected while the user types in the filter box, where
       // Enter means "apply" and Ctrl+C means "copy what I selected in here".
       const target = e.target as HTMLElement | null
-      if (
-        target instanceof HTMLInputElement ||
-        target instanceof HTMLTextAreaElement ||
-        target instanceof HTMLSelectElement
-      ) {
-        return
-      }
+      if (isTypingTarget(target)) return
       // While the cell menu or a dialog is open the keys belong to it: Enter
       // there means "activate the highlighted item", and handling it here as
       // well would run the menu's action and open the viewer on top of it.

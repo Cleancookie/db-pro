@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import { elapsedFor, isRunning, trayStatus } from '../activity'
+import {
+  elapsedFor,
+  hiddenCatalogueCount,
+  isRunning,
+  trayStatus,
+  visibleQueries,
+} from '../activity'
 import { formatCount, formatDuration } from '../commands'
 import { useStore } from '../store'
 import { Dialog, dialogButton } from '../ui'
@@ -57,6 +63,12 @@ export function ActivityTray() {
   const refresh = useStore((s) => s.refreshActivity)
   const clearHistory = useStore((s) => s.clearQueryHistory)
 
+  // Off by default: catalogue reads fire on every table open and would bury
+  // the queries the user actually ran. Local state rather than a saved
+  // setting — it is a way of looking at the log, not a preference about how
+  // the app behaves.
+  const [showCatalogue, setShowCatalogue] = useState(false)
+
   // The app is the only thing that issues queries, so its own count of
   // outstanding calls is the whole answer to "is there anything to watch".
   // With history retained the list is otherwise static: an open tray over an
@@ -65,6 +77,8 @@ export function ActivityTray() {
   usePolling(inFlight > 0, refresh)
   const now = useTicker(queries.some(isRunning))
   const status = trayStatus(queries, polledAt, now)
+  const shown = visibleQueries(queries, showCatalogue)
+  const hidden = hiddenCatalogueCount(queries)
 
   const label =
     status.running === 0
@@ -88,6 +102,19 @@ export function ActivityTray() {
             <span className="min-w-0 flex-1">Query</span>
             <span className="w-14 shrink-0" />
             <span className="w-14 shrink-0 text-right">Time</span>
+            {/* Always rendered, so the header does not reflow the first time a
+                catalogue read lands. Disabled when there is nothing to reveal. */}
+            <button
+              onClick={() => setShowCatalogue(!showCatalogue)}
+              disabled={hidden === 0 && !showCatalogue}
+              aria-pressed={showCatalogue}
+              title="Catalogue reads are the app describing tables for the tree and for autocomplete"
+              className={`shrink-0 rounded px-1.5 py-0.5 tracking-normal normal-case disabled:opacity-30 enabled:hover:bg-[var(--color-elevated)] ${
+                showCatalogue ? 'text-[var(--color-text)]' : ''
+              }`}
+            >
+              {showCatalogue ? 'hide catalogue' : `catalogue${hidden > 0 ? ` (${hidden})` : ''}`}
+            </button>
             <button
               onClick={() => void clearHistory()}
               disabled={status.finished === 0}
@@ -97,13 +124,13 @@ export function ActivityTray() {
             </button>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto">
-            {queries.length === 0 ? (
+            {shown.length === 0 ? (
               <p className="px-3 py-4 text-center text-xs text-[var(--color-faint)]">
-                No queries yet
+                {hidden > 0 ? `${hidden} catalogue reads, hidden` : 'No queries yet'}
               </p>
             ) : (
               <ul className="flex flex-col">
-                {queries.map((q) => (
+                {shown.map((q) => (
                   <QueryRow key={q.id} query={q} polledAt={polledAt} now={now} />
                 ))}
               </ul>

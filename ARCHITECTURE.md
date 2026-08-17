@@ -70,6 +70,57 @@ focus restore never fires. `ui/Dialog.tsx` captures the opener during first
 render and restores focus on unmount. That is the kind of vendor-shaped detail
 the boundary exists to keep out of the rest of the app.
 
+## Every query goes through one door
+
+`internal/query.Runner` is the only way `internal/api` runs anything against a
+database:
+
+```go
+err := s.runner.Do(ctx, query.Op{...}, func(qctx context.Context) error { ... })
+```
+
+Cross-cutting behaviour is middleware wrapped around that call, so it applies
+to everything by construction rather than by each call site remembering:
+
+| Middleware | Does |
+| --- | --- |
+| `Tracking` | Registers with `internal/activity` — the tray row, the cancellable context, the terminal phase in the history |
+| `Logging` | One line per finished query: id, kind, database, rows, duration, error |
+
+Order matters and is fixed in `api.New`: `Tracking` is outermost, so it supplies
+the context everything else runs under and assigns the id that log lines share
+with the tray.
+
+This replaced eight hand-assembled call sites, each of which registered,
+set a phase and released by hand. That duplication was not theoretical: one site
+returned its result directly instead of assigning it, so the deferred release
+saw a nil error and **every failed editor statement was recorded as successful**
+until a merge exposed it. `TestBrowsingRecordsEveryQueryItRuns` is the guard
+against a new method quietly bypassing the runner.
+
+Adding a slow-query warning, a retry, or per-connection rate limiting is a new
+`Middleware` and nothing else.
+
+One honest limitation: for introspection, `Op.SQL` is a label ("describe
+auth.users") rather than a statement, because the drivers assemble their own
+catalogue queries internally and each dialect asks a different question. It is
+the one place the log is not literally what was sent.
+
+## The activity log keeps everything
+
+Catalogue reads are retained like any other query. They were dropped
+originally — they fire on every table open and tree expansion, and would push
+the user's own queries out of the ring — but the effect was a log that could not
+be trusted: a describe was visible for the milliseconds it ran and then vanished,
+so it read as never having been recorded.
+
+So the ring holds every kind (500 entries), and the tray filters catalogue reads
+out of the *view* by default, with a toggle in its header. A read that is still
+running is always shown whatever its kind, because a slow `information_schema`
+query is exactly the thing worth seeing. Hiding is a display choice the user can
+reverse; dropping was not.
+
+
 ## Command palette matching
 
 Scoring is delegated to `fuzzysort` (`frontend/src/fuzzy.ts`) — the same class

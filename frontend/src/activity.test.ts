@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { elapsedFor, isRunning, trayStatus } from './activity'
+import {
+  elapsedFor,
+  hiddenCatalogueCount,
+  isRunning,
+  trayStatus,
+  visibleQueries,
+} from './activity'
 import type { QueryInfo } from './types'
 
 function query(over: Partial<QueryInfo> = {}): QueryInfo {
@@ -81,5 +87,29 @@ describe('trayStatus', () => {
       1500,
     )
     expect(s).toEqual({ running: 1, cancelling: 0, longestMs: 600, finished: 1 })
+  })
+})
+
+describe('visibleQueries', () => {
+  const browse = query({ id: 'q001', phase: 'done' })
+  const describeDone = query({ id: 'q002', kind: 'introspect', phase: 'done', sql: 'describe users' })
+  const describeRunning = query({ id: 'q003', kind: 'introspect', phase: 'executing' })
+
+  it('hides finished catalogue reads by default', () => {
+    expect(visibleQueries([browse, describeDone], false).map((q) => q.id)).toEqual(['q001'])
+  })
+
+  it('always shows a catalogue read that is still running', () => {
+    // A slow information_schema query is exactly what needs to be visible.
+    expect(visibleQueries([describeRunning], false).map((q) => q.id)).toEqual(['q003'])
+  })
+
+  it('shows everything when asked, in the original order', () => {
+    expect(visibleQueries([browse, describeDone, describeRunning], true)).toHaveLength(3)
+  })
+
+  it('counts what the filter is hiding', () => {
+    expect(hiddenCatalogueCount([browse, describeDone, describeRunning])).toBe(1)
+    expect(hiddenCatalogueCount([browse])).toBe(0)
   })
 })

@@ -3,6 +3,7 @@ package activity
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -176,23 +177,38 @@ func TestHistoryIsBoundedAndDropsTheOldest(t *testing.T) {
 	if len(got) != historySize {
 		t.Fatalf("List() = %d entries, want the %d-entry bound", len(got), historySize)
 	}
-	// Newest first, and the first twenty ids are gone.
-	if got[0].ID != "q220" || got[len(got)-1].ID != "q021" {
-		t.Fatalf("ring holds %s…%s, want q220…q021", got[0].ID, got[len(got)-1].ID)
+	// Newest first, and the first twenty ids are gone. Derived from
+	// historySize rather than written out, so changing the bound does not mean
+	// hand-editing two magic ids.
+	newest := fmt.Sprintf("q%03d", historySize+20)
+	oldest := fmt.Sprintf("q%03d", 21)
+	if got[0].ID != newest || got[len(got)-1].ID != oldest {
+		t.Fatalf("ring holds %s…%s, want %s…%s", got[0].ID, got[len(got)-1].ID, newest, oldest)
 	}
 }
 
-// Catalogue reads happen on every table open; keeping them would push out the
-// queries the user actually ran.
-func TestIntrospectionIsNotRetained(t *testing.T) {
+// Catalogue reads are retained like anything else. They were dropped once, and
+// the result was a log that could not be trusted: a describe was visible for
+// the few milliseconds it ran and then vanished, so it looked as though it had
+// never been recorded. The tray filters them out of the view instead, which the
+// user can reverse.
+func TestIntrospectionIsRetained(t *testing.T) {
 	r := New()
-	_, done := r.Begin(context.Background(), "c1", "", KindIntrospect, "list objects")
+	_, done := r.Begin(context.Background(), "c1", "", KindIntrospect, "describe auth.users")
 	if len(r.List()) != 1 {
 		t.Fatal("introspection should be visible while it runs")
 	}
 	done(nil)
-	if got := r.List(); len(got) != 0 {
-		t.Fatalf("List() = %+v, want introspection dropped once finished", got)
+
+	got := r.List()
+	if len(got) != 1 {
+		t.Fatalf("List() = %d entries, want the finished introspection kept", len(got))
+	}
+	if got[0].Kind != KindIntrospect || got[0].Phase != PhaseDone {
+		t.Fatalf("got %+v, want a done introspect entry", got[0])
+	}
+	if got[0].SQL != "describe auth.users" {
+		t.Fatalf("SQL = %q, want the label preserved", got[0].SQL)
 	}
 }
 

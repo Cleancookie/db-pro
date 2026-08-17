@@ -759,17 +759,63 @@ func TestActivityRecordsFailuresWithTheDatabaseMessage(t *testing.T) {
 	}
 }
 
-// Catalogue reads are visible while they run but must not fill the log.
-func TestActivityDropsIntrospectionFromTheHistory(t *testing.T) {
+// Catalogue reads reach the log like anything else. They were dropped once, and
+// the effect was a log the user could not trust: a describe ran, was visible for
+// a few milliseconds, and left no trace. The tray hides them from the *view* by
+// default, which is reversible; dropping the data was not.
+func TestActivityRecordsIntrospection(t *testing.T) {
 	svc, id := newTestService(t)
 	seed(t, svc, id, 1)
 	svc.ClearQueryHistory()
 
-	if _, err := svc.ListObjects(context.Background(), id, ""); err != nil {
-		t.Fatalf("list objects: %v", err)
+	if _, err := svc.ListColumns(context.Background(), id,
+		driver.ObjectRef{Name: "orders"}); err != nil {
+		t.Fatalf("list columns: %v", err)
 	}
-	if got := svc.Activity().Queries; len(got) != 0 {
-		t.Fatalf("Activity() = %+v, want introspection left out of the log", got)
+
+	got := svc.Activity().Queries
+	if len(got) != 1 {
+		t.Fatalf("Activity() = %+v, want the describe recorded", got)
+	}
+	if got[0].Kind != activity.KindIntrospect || got[0].Phase != activity.PhaseDone {
+		t.Fatalf("got %+v, want a done introspect entry", got[0])
+	}
+	// The label names the object, so the row is identifiable in the tray.
+	if !strings.Contains(got[0].SQL, "orders") {
+		t.Fatalf("SQL = %q, want it to name the object described", got[0].SQL)
+	}
+}
+
+// Every path through Service goes via the query runner, so anything it runs is
+// tracked. This is the guard against a new method quietly bypassing it: the
+// count query is separate from the browse, and both must be recorded.
+func TestBrowsingRecordsEveryQueryItRuns(t *testing.T) {
+	svc, id := newTestService(t)
+	seed(t, svc, id, 3)
+	svc.ClearQueryHistory()
+
+	ref := driver.ObjectRef{Name: "orders"}
+	if _, err := svc.ReadRows(context.Background(), ReadRowsRequest{
+		ConnectionID: id,
+		Ref:          ref,
+		Pagination:   Pagination{Enabled: true, Page: 1, PageSize: 10},
+	}); err != nil {
+		t.Fatalf("read rows: %v", err)
+	}
+	if _, err := svc.CountRows(context.Background(), CountRowsRequest{
+		ConnectionID: id, Ref: ref,
+	}); err != nil {
+		t.Fatalf("count rows: %v", err)
+	}
+
+	kinds := map[activity.Kind]bool{}
+	for _, q := range svc.Activity().Queries {
+		kinds[q.Kind] = true
+	}
+	for _, want := range []activity.Kind{activity.KindBrowse, activity.KindCount, activity.KindIntrospect} {
+		if !kinds[want] {
+			t.Errorf("no %q entry in the log; a call is bypassing the runner", want)
+		}
 	}
 }
 

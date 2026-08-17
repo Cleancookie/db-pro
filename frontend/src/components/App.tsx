@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { focusFilter } from '../commands'
 import { transportName } from '../api'
+import { isTypingTarget } from '../dom'
 import { useStore } from '../store'
 import { ActivityPage } from './ActivityPage'
 import { ActivityTray, ConfirmCancelDialog } from './ActivityTray'
@@ -160,10 +161,7 @@ function useGlobalHotkeys() {
       const s = useStore.getState()
       const mod = e.ctrlKey || e.metaKey
       const target = e.target as HTMLElement | null
-      const typing =
-        target instanceof HTMLInputElement ||
-        target instanceof HTMLTextAreaElement ||
-        target instanceof HTMLSelectElement
+      const typing = isTypingTarget(target)
 
       if (mod && e.key.toLowerCase() === 'k') {
         e.preventDefault()

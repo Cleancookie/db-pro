@@ -65,9 +65,16 @@ func (p Phase) Terminal() bool {
 }
 
 // historySize bounds the retained log of finished queries. The pane is a
-// session's scrollback, not an audit trail: 200 entries is several hours of
-// browsing, and it is a hard bound so a long-running app cannot grow it.
-const historySize = 200
+// session's scrollback, not an audit trail, and it is a hard bound so a
+// long-running app cannot grow it.
+//
+// Sized for the fact that *every* kind is retained, catalogue reads included.
+// Those were dropped originally, on the grounds that they would push the user's
+// own queries out of the ring — but a describe that is invisible is exactly
+// what makes the log untrustworthy ("I can see it running, it never appears").
+// So they are kept and the tray filters them out of the *view* by default,
+// which is a display choice the user can reverse rather than data thrown away.
+const historySize = 500
 
 // historySQLLimit caps the SQL kept per history entry. A ring of 200 editor
 // statements is the one place in this app where retained strings could add up,
@@ -130,6 +137,25 @@ func AddRows(ctx context.Context, n int64) {
 	}
 }
 
+// Progress reads back what a tracked query has reached. Used by the logging
+// middleware, which wants the row count a query ended on without going through
+// the registry lock. An untracked context reports the zero state.
+func Progress(ctx context.Context) (Phase, int64) {
+	if t, ok := ctx.Value(trackerKey{}).(*tracker); ok {
+		return t.load()
+	}
+	return PhaseQueued, 0
+}
+
+type idKey struct{}
+
+// IDOf returns the id Begin assigned to this context's query, so a log line
+// and the tray row can be matched up. Empty for an untracked context.
+func IDOf(ctx context.Context) string {
+	id, _ := ctx.Value(idKey{}).(string)
+	return id
+}
+
 type entry struct {
 	info    Info
 	track   *tracker
@@ -169,6 +195,7 @@ func (r *Registry) Begin(parent context.Context, connID, database string, kind K
 	track := &tracker{}
 	track.setPhase(PhaseQueued)
 	ctx = context.WithValue(ctx, trackerKey{}, track)
+	ctx = context.WithValue(ctx, idKey{}, id)
 
 	r.mu.Lock()
 	r.running[id] = &entry{
@@ -219,12 +246,6 @@ func (r *Registry) finish(id string, err error) {
 		info.Phase = PhaseDone
 	}
 
-	// Catalogue reads happen on every table open and every tree expansion.
-	// Keeping them would push the queries the user actually ran out of a
-	// 200-entry ring within a minute of clicking around.
-	if info.Kind == KindIntrospect {
-		return
-	}
 	info.SQL = truncate(info.SQL, historySQLLimit)
 	r.history[r.histAt] = info
 	r.histAt = (r.histAt + 1) % historySize
