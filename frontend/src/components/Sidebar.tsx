@@ -3,6 +3,7 @@ import { describeConnection, formatCount, objectCandidate, OBJECT_ICON, qualifie
 import { rankCandidates } from '../fuzzy'
 import { useStore, type SectionKey } from '../store'
 import { ConnectionMenu } from './ConnectionMenu'
+import { ObjectMenu } from './ObjectMenu'
 import { LIMITS, Resizer, useResizable } from './Resizer'
 import type { ObjectType, SchemaObject } from '../types'
 
@@ -188,9 +189,8 @@ export function Sidebar() {
                   {list.map((o) => {
                     const qualified = qualifiedName(o)
                     const active = activeRef?.name === o.name && activeRef?.schema === o.schema
-                    return (
+                    const row = (
                       <button
-                        key={`${type}:${qualified}`}
                         onClick={() => openObject(o)}
                         title={qualified}
                         className={`flex w-full items-center gap-1.5 rounded px-1.5 py-[0.15rem] text-left ${
@@ -212,6 +212,15 @@ export function Sidebar() {
                           </span>
                         )}
                       </button>
+                    )
+                    // Only tables and views have anything to describe; the
+                    // other kinds get the plain row with no menu.
+                    return type === 'table' || type === 'view' ? (
+                      <ObjectMenu key={`${type}:${qualified}`} object={o}>
+                        {row}
+                      </ObjectMenu>
+                    ) : (
+                      <span key={`${type}:${qualified}`}>{row}</span>
                     )
                   })}
                 </section>

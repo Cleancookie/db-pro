@@ -88,6 +88,113 @@ type Column struct {
 	PrimaryKey bool    `json:"primaryKey"`
 	Default    *string `json:"default,omitempty"`
 	Ordinal    int     `json:"ordinal"`
+
+	// The fields below are filled by DescribeObject and left zero by
+	// ListColumns, which the row browser uses and which should stay one cheap
+	// query. Nothing outside the details view should depend on them.
+
+	// AutoIncrement covers MySQL AUTO_INCREMENT, postgres identity and serial,
+	// and MSSQL IDENTITY. For SQLite it marks the INTEGER PRIMARY KEY that
+	// aliases the rowid, which is the same idea by a different name.
+	AutoIncrement bool `json:"autoIncrement,omitempty"`
+	// Generated marks a computed/virtual/stored column.
+	Generated bool `json:"generated,omitempty"`
+	// Comment is nil where the engine has no comment for the column, and also
+	// where it has no notion of one — see ObjectDetail.Unavailable.
+	Comment   *string `json:"comment,omitempty"`
+	Collation *string `json:"collation,omitempty"`
+}
+
+// Index is one index on a table. Primary is set for the index backing the
+// primary key, which every dialect reports through its index catalog and which
+// the UI labels rather than listing twice.
+type Index struct {
+	Name    string   `json:"name"`
+	Columns []string `json:"columns"`
+	Unique  bool     `json:"unique"`
+	Primary bool     `json:"primary"`
+	// Method is the access method where the dialect names one — btree, hash,
+	// CLUSTERED, NONCLUSTERED. Empty where the dialect has only one kind.
+	Method string `json:"method,omitempty"`
+}
+
+// ForeignKey is one outbound reference. Columns and ReferencedColumns are
+// positionally paired, so a composite key reads left to right.
+type ForeignKey struct {
+	Name              string   `json:"name"`
+	Columns           []string `json:"columns"`
+	ReferencedSchema  string   `json:"referencedSchema,omitempty"`
+	ReferencedTable   string   `json:"referencedTable"`
+	ReferencedColumns []string `json:"referencedColumns"`
+	// OnUpdate and OnDelete are the referential actions as the dialect words
+	// them, upper-cased: CASCADE, SET NULL, RESTRICT, NO ACTION.
+	OnUpdate string `json:"onUpdate,omitempty"`
+	OnDelete string `json:"onDelete,omitempty"`
+}
+
+type Trigger struct {
+	Name string `json:"name"`
+	// Timing is BEFORE, AFTER or INSTEAD OF; Event is INSERT, UPDATE or
+	// DELETE. Both are empty where the dialect only exposes the trigger body.
+	Timing string `json:"timing,omitempty"`
+	Event  string `json:"event,omitempty"`
+}
+
+type CheckConstraint struct {
+	Name       string `json:"name"`
+	Expression string `json:"expression"`
+}
+
+// ObjectDetail is everything the details view shows about one table or view.
+//
+// The split between fields is by portability, not by topic. Columns, PrimaryKey,
+// Indexes, ForeignKeys and Triggers are answerable by all four dialects and are
+// always populated. RowEstimate, SizeBytes, Comment and Checks are not: where a
+// dialect cannot answer, the field stays nil or empty and Unavailable carries
+// the reason.
+type ObjectDetail struct {
+	Ref  ObjectRef  `json:"ref"`
+	Type ObjectType `json:"type"`
+
+	Columns     []Column     `json:"columns"`
+	PrimaryKey  []string     `json:"primaryKey"`
+	Indexes     []Index      `json:"indexes"`
+	ForeignKeys []ForeignKey `json:"foreignKeys"`
+	Triggers    []Trigger    `json:"triggers"`
+
+	// RowEstimate is the planner's estimate, not a COUNT(*) — it can be stale
+	// or zero on a table that has never been analysed, and is labelled as an
+	// estimate in the UI.
+	RowEstimate *int64 `json:"rowEstimate,omitempty"`
+	// SizeBytes is data plus indexes where the dialect reports them together.
+	SizeBytes *int64  `json:"sizeBytes,omitempty"`
+	Comment   *string `json:"comment,omitempty"`
+	// Not omitempty: an empty slice must still marshal as [] rather than
+	// disappearing, because the frontend declares this field as always present
+	// and indexes into it. The same goes for the five slices above.
+	Checks []CheckConstraint `json:"checks"`
+	// Definition is the view body, for views only.
+	Definition *string `json:"definition,omitempty"`
+
+	// DialectDetail is the handful of facts that exist in one dialect and have
+	// no counterpart elsewhere — MySQL's engine and table collation, postgres's
+	// tablespace and owner, MSSQL's filegroup. Rendered as a plain key/value
+	// list, in Order.
+	DialectDetail []KeyValue `json:"dialectDetail,omitempty"`
+
+	// Unavailable maps a field name above to a short reason the engine could
+	// not fill it: "not available in SQLite", "requires the dbstat module".
+	// The UI prints the reason where the value would go, so a gap reads as a
+	// known engine limitation rather than as a zero. A field named here is nil
+	// or empty above and must never be rendered as data.
+	Unavailable map[string]string `json:"unavailable,omitempty"`
+}
+
+// KeyValue is one dialect-specific fact. A slice rather than a map because the
+// order is chosen by the driver and worth preserving in the UI.
+type KeyValue struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
 }
 
 // ObjectRef identifies a table or view to read from.
@@ -174,6 +281,15 @@ type Driver interface {
 	// connection; postgres and sqlite ignore it.
 	ListObjects(ctx context.Context, db *sql.DB, database string) ([]SchemaObject, error)
 	ListColumns(ctx context.Context, db *sql.DB, ref ObjectRef) ([]Column, error)
+	// DescribeObject gathers everything the details view shows about one table
+	// or view. It is several queries per dialect and is only called when that
+	// view is opened — the row browser stays on ListColumns.
+	//
+	// A dialect that cannot answer part of it records the reason in
+	// ObjectDetail.Unavailable rather than returning an error: a missing row
+	// count is not a failure to describe the table. An error means the object
+	// could not be read at all.
+	DescribeObject(ctx context.Context, db *sql.DB, ref ObjectRef) (*ObjectDetail, error)
 
 	// QuoteIdent quotes a single identifier for this dialect.
 	QuoteIdent(ident string) string

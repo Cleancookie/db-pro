@@ -223,6 +223,18 @@ export function buildActionCommands(s: Store): Command[] {
 
   if (s.activeRef) {
     cmds.push({
+      id: 'data:details',
+      title: 'Show table details',
+      subtitle: 'Columns, indexes, foreign keys, constraints, triggers',
+      group: 'Query',
+      candidate: {
+        name: 'Show table details',
+        keywords:
+          'describe schema structure ddl columns indexes keys foreign constraints triggers size rows info metadata',
+      },
+      run: () => s.openDetails(s.activeRef!),
+    })
+    cmds.push({
       id: 'data:refresh',
       title: 'Refresh rows',
       group: 'Query',

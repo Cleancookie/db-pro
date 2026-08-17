@@ -366,6 +366,54 @@ type ReadRowsResult struct {
 	HasMore bool `json:"hasMore"`
 }
 
+// DescribeObject gathers everything the table-details view shows. It is
+// several queries per dialect rather than one, so it runs as a single
+// introspect Op through the middleware chain — one activity-log entry for the
+// whole description rather than seven, which is what someone reading the log
+// wants to see.
+func (s *Service) DescribeObject(ctx context.Context, connID string, ref driver.ObjectRef) (*driver.ObjectDetail, error) {
+	sess, err := s.session(ctx, connID, ref.Database)
+	if err != nil {
+		return nil, err
+	}
+
+	var det *driver.ObjectDetail
+	if err := s.runner.Do(ctx, query.Op{
+		ConnectionID: connID,
+		Database:     ref.Database,
+		Kind:         activity.KindIntrospect,
+		SQL:          "describe object " + qualify(ref),
+	}, func(qctx context.Context) error {
+		var err error
+		det, err = sess.Driver.DescribeObject(qctx, sess.DB, ref)
+		return err
+	}); err != nil {
+		return nil, err
+	}
+
+	// The frontend indexes into these, so a nil slice would arrive as null and
+	// need guarding at every use site.
+	if det.Columns == nil {
+		det.Columns = []driver.Column{}
+	}
+	if det.Indexes == nil {
+		det.Indexes = []driver.Index{}
+	}
+	if det.ForeignKeys == nil {
+		det.ForeignKeys = []driver.ForeignKey{}
+	}
+	if det.Triggers == nil {
+		det.Triggers = []driver.Trigger{}
+	}
+	if det.Checks == nil {
+		det.Checks = []driver.CheckConstraint{}
+	}
+	if det.PrimaryKey == nil {
+		det.PrimaryKey = []string{}
+	}
+	return det, nil
+}
+
 func (s *Service) ReadRows(ctx context.Context, req ReadRowsRequest) (*ReadRowsResult, error) {
 	sess, err := s.session(ctx, req.ConnectionID, req.Ref.Database)
 	if err != nil {

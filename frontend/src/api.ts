@@ -13,6 +13,7 @@ import type {
   Connection,
   ConnectResult,
   Kind,
+  ObjectDetail,
   ObjectRef,
   Pagination,
   ReadRowsResult,
@@ -108,6 +109,9 @@ export const api = {
 
   listColumns: (id: string, ref: ObjectRef) =>
     call<Column[]>('ListColumns', [id, ref], { id, ref }),
+
+  describeObject: (id: string, ref: ObjectRef) =>
+    call<ObjectDetail>('DescribeObject', [id, ref], { id, ref }),
 
   readRows: (req: {
     connectionId: string

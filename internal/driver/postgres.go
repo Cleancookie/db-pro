@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/url"
 	"strconv"
+	"strings"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
@@ -230,4 +231,315 @@ func (d postgresDriver) BuildSelect(ref ObjectRef, opts ReadOptions, cols []Colu
 
 func (d postgresDriver) BuildCount(ref ObjectRef, filter string) string {
 	return "SELECT count(*) FROM " + d.target(ref) + whereClause(filter)
+}
+
+// DescribeObject reads pg_catalog rather than information_schema throughout,
+// for the same reason ListColumns does: the catalog gives fully-qualified types
+// and exposes identity, generated and comment facts that information_schema
+// either flattens or omits.
+//
+// Every relation is addressed by its oid via the ::regclass cast of the
+// schema-qualified name, so a table and a view are described by the same code.
+func (d postgresDriver) DescribeObject(ctx context.Context, db *sql.DB, ref ObjectRef) (*ObjectDetail, error) {
+	det := &ObjectDetail{Ref: ref, Type: ObjectTable}
+	target := d.target(ref)
+
+	var err error
+	if det.Columns, err = d.describeColumns(ctx, db, target); err != nil {
+		return nil, err
+	}
+	if det.Indexes, err = d.describeIndexes(ctx, db, target); err != nil {
+		return nil, err
+	}
+	if det.ForeignKeys, err = d.describeForeignKeys(ctx, db, target); err != nil {
+		return nil, err
+	}
+	if det.Triggers, err = d.describeTriggers(ctx, db, target); err != nil {
+		return nil, err
+	}
+	if det.Checks, err = d.describeChecks(ctx, db, target); err != nil {
+		return nil, err
+	}
+	det.PrimaryKey = primaryKeyOf(det.Indexes, det.Columns)
+
+	if err := d.describeRelation(ctx, db, target, det); err != nil {
+		return nil, err
+	}
+	return det, nil
+}
+
+func (d postgresDriver) describeRelation(ctx context.Context, db *sql.DB, target string, det *ObjectDetail) error {
+	var (
+		reltuples   float64
+		size        sql.NullInt64
+		comment     sql.NullString
+		relkind     string
+		am, ts, own sql.NullString
+	)
+	err := db.QueryRowContext(ctx, `
+		SELECT c.reltuples,
+		       pg_total_relation_size(c.oid),
+		       obj_description(c.oid, 'pg_class'),
+		       c.relkind,
+		       am.amname,
+		       ts.spcname,
+		       pg_get_userbyid(c.relowner)
+		FROM pg_class c
+		LEFT JOIN pg_am am ON am.oid = c.relam
+		LEFT JOIN pg_tablespace ts ON ts.oid = c.reltablespace
+		WHERE c.oid = $1::regclass`, target,
+	).Scan(&reltuples, &size, &comment, &relkind, &am, &ts, &own)
+	if err == sql.ErrNoRows {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+
+	isView := relkind == "v" || relkind == "m"
+	if isView {
+		det.Type = ObjectView
+		var def sql.NullString
+		if err := db.QueryRowContext(ctx,
+			`SELECT pg_get_viewdef($1::regclass, true)`, target).Scan(&def); err == nil && def.Valid {
+			v := def.String
+			det.Definition = &v
+		}
+	}
+
+	// reltuples is -1 on a relation that has never been analysed (and 0 on
+	// older servers, which is indistinguishable from a genuinely empty table —
+	// so only the explicit -1 is reported as missing).
+	switch {
+	case relkind == "v":
+		det.markUnavailable("rowEstimate", "a view has no stored rows to estimate")
+	case reltuples < 0:
+		det.markUnavailable("rowEstimate", "this table has not been analysed yet — run ANALYZE")
+	default:
+		n := int64(reltuples)
+		det.RowEstimate = &n
+	}
+
+	if relkind == "v" {
+		det.markUnavailable("sizeBytes", "a view has no storage of its own")
+	} else if size.Valid {
+		det.SizeBytes = &size.Int64
+	} else {
+		det.markUnavailable("sizeBytes", "no size reported for this relation")
+	}
+
+	if comment.Valid {
+		v := comment.String
+		det.Comment = &v
+	}
+	if own.Valid && own.String != "" {
+		det.DialectDetail = append(det.DialectDetail, KeyValue{Key: "Owner", Value: own.String})
+	}
+	if am.Valid && am.String != "" {
+		det.DialectDetail = append(det.DialectDetail, KeyValue{Key: "Access method", Value: am.String})
+	}
+	if ts.Valid && ts.String != "" {
+		det.DialectDetail = append(det.DialectDetail, KeyValue{Key: "Tablespace", Value: ts.String})
+	}
+	return nil
+}
+
+func (d postgresDriver) describeColumns(ctx context.Context, db *sql.DB, target string) ([]Column, error) {
+	// attidentity and attgenerated are single characters, empty when the column
+	// is neither. A serial column is not an identity column but behaves like
+	// one, so a nextval default counts as auto-increment too.
+	rows, err := db.QueryContext(ctx, `
+		SELECT a.attname,
+		       format_type(a.atttypid, a.atttypmod),
+		       NOT a.attnotnull,
+		       pg_get_expr(ad.adbin, ad.adrelid),
+		       a.attnum,
+		       COALESCE(i.indisprimary, false),
+		       a.attidentity <> '',
+		       a.attgenerated <> '',
+		       col_description(a.attrelid, a.attnum),
+		       co.collname
+		FROM pg_attribute a
+		LEFT JOIN pg_attrdef ad ON ad.adrelid = a.attrelid AND ad.adnum = a.attnum
+		LEFT JOIN pg_index i ON i.indrelid = a.attrelid AND i.indisprimary
+		                     AND a.attnum = ANY(i.indkey)
+		LEFT JOIN pg_collation co ON co.oid = a.attcollation
+		WHERE a.attrelid = $1::regclass AND a.attnum > 0 AND NOT a.attisdropped
+		ORDER BY a.attnum`, target)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []Column
+	for rows.Next() {
+		var (
+			name, typ            string
+			nullable             bool
+			def, comment, coll   sql.NullString
+			ord                  int
+			pk, identity, genCol bool
+		)
+		if err := rows.Scan(&name, &typ, &nullable, &def, &ord, &pk,
+			&identity, &genCol, &comment, &coll); err != nil {
+			return nil, err
+		}
+		c := Column{
+			Name: name, DataType: typ, Nullable: nullable,
+			PrimaryKey: pk, Ordinal: ord, Generated: genCol,
+			AutoIncrement: identity || (def.Valid && strings.HasPrefix(def.String, "nextval(")),
+		}
+		if def.Valid {
+			v := def.String
+			c.Default = &v
+		}
+		if comment.Valid {
+			v := comment.String
+			c.Comment = &v
+		}
+		// Every column has an implicit collation; "default" carries no
+		// information and is dropped rather than shown on every row.
+		if coll.Valid && coll.String != "" && coll.String != "default" {
+			v := coll.String
+			c.Collation = &v
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+func (d postgresDriver) describeIndexes(ctx context.Context, db *sql.DB, target string) ([]Index, error) {
+	// indkey is an int2vector, cast to a real array so unnest WITH ORDINALITY
+	// can pair each entry with its position. A zero entry is an expression
+	// rather than a column, so the join to pg_attribute is left outer and that
+	// position simply contributes no name.
+	rows, err := db.QueryContext(ctx, `
+		SELECT ic.relname, ix.indisunique, ix.indisprimary, am.amname, a.attname, k.ord
+		FROM pg_index ix
+		JOIN pg_class ic ON ic.oid = ix.indexrelid
+		LEFT JOIN pg_am am ON am.oid = ic.relam
+		JOIN LATERAL unnest(ix.indkey::int2[]) WITH ORDINALITY AS k(attnum, ord) ON true
+		LEFT JOIN pg_attribute a ON a.attrelid = ix.indrelid AND a.attnum = k.attnum
+		WHERE ix.indrelid = $1::regclass
+		ORDER BY ic.relname, k.ord`, target)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	acc := newIndexAccum()
+	for rows.Next() {
+		var (
+			idxName         string
+			uniq, primary   bool
+			method, colName sql.NullString
+			ord             int
+		)
+		if err := rows.Scan(&idxName, &uniq, &primary, &method, &colName, &ord); err != nil {
+			return nil, err
+		}
+		acc.add(idxName, colName.String, uniq, primary, method.String)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return acc.result(), nil
+}
+
+func (d postgresDriver) describeForeignKeys(ctx context.Context, db *sql.DB, target string) ([]ForeignKey, error) {
+	// conkey and confkey are equal-length arrays of local and referenced
+	// attribute numbers; unnesting them together keeps the pairs aligned.
+	rows, err := db.QueryContext(ctx, `
+		SELECT con.conname, a.attname, ns.nspname, ref.relname, fa.attname,
+		       con.confupdtype, con.confdeltype, k.ord
+		FROM pg_constraint con
+		JOIN pg_class ref ON ref.oid = con.confrelid
+		JOIN pg_namespace ns ON ns.oid = ref.relnamespace
+		JOIN LATERAL unnest(con.conkey, con.confkey) WITH ORDINALITY AS k(att, fatt, ord) ON true
+		JOIN pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = k.att
+		JOIN pg_attribute fa ON fa.attrelid = con.confrelid AND fa.attnum = k.fatt
+		WHERE con.conrelid = $1::regclass AND con.contype = 'f'
+		ORDER BY con.conname, k.ord`, target)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	acc := newFKAccum()
+	for rows.Next() {
+		var (
+			name, col, schema, refTable, refCol string
+			upd, del                            string
+			ord                                 int
+		)
+		if err := rows.Scan(&name, &col, &schema, &refTable, &refCol, &upd, &del, &ord); err != nil {
+			return nil, err
+		}
+		if schema == "public" {
+			schema = ""
+		}
+		acc.add(name, col, schema, refTable, refCol,
+			pgReferentialAction(upd), pgReferentialAction(del))
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return acc.result(), nil
+}
+
+func (d postgresDriver) describeTriggers(ctx context.Context, db *sql.DB, target string) ([]Trigger, error) {
+	// tgtype is a bitmask: 1 row-level, 2 BEFORE, 4 INSERT, 8 DELETE,
+	// 16 UPDATE, 64 INSTEAD OF. Constraint triggers backing foreign keys are
+	// internal and excluded — they are already shown as foreign keys.
+	rows, err := db.QueryContext(ctx, `
+		SELECT tgname,
+		       CASE WHEN (tgtype & 64) <> 0 THEN 'INSTEAD OF'
+		            WHEN (tgtype & 2) <> 0 THEN 'BEFORE'
+		            ELSE 'AFTER' END,
+		       trim(concat_ws(' OR ',
+		            CASE WHEN (tgtype & 4)  <> 0 THEN 'INSERT' END,
+		            CASE WHEN (tgtype & 8)  <> 0 THEN 'DELETE' END,
+		            CASE WHEN (tgtype & 16) <> 0 THEN 'UPDATE' END,
+		            CASE WHEN (tgtype & 32) <> 0 THEN 'TRUNCATE' END))
+		FROM pg_trigger
+		WHERE tgrelid = $1::regclass AND NOT tgisinternal
+		ORDER BY tgname`, target)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []Trigger
+	for rows.Next() {
+		var name, timing, event string
+		if err := rows.Scan(&name, &timing, &event); err != nil {
+			return nil, err
+		}
+		out = append(out, Trigger{Name: name, Timing: timing, Event: event})
+	}
+	return out, rows.Err()
+}
+
+func (d postgresDriver) describeChecks(ctx context.Context, db *sql.DB, target string) ([]CheckConstraint, error) {
+	// pg_get_constraintdef returns "CHECK ((x > 0))"; the UI shows it verbatim
+	// rather than trying to strip the wrapper back off.
+	rows, err := db.QueryContext(ctx, `
+		SELECT conname, pg_get_constraintdef(oid)
+		FROM pg_constraint
+		WHERE conrelid = $1::regclass AND contype = 'c'
+		ORDER BY conname`, target)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []CheckConstraint
+	for rows.Next() {
+		var name, def string
+		if err := rows.Scan(&name, &def); err != nil {
+			return nil, err
+		}
+		out = append(out, CheckConstraint{Name: name, Expression: def})
+	}
+	return out, rows.Err()
 }

@@ -283,3 +283,346 @@ func (d mssqlDriver) stableSortKey(cols []Column) string {
 func (d mssqlDriver) BuildCount(ref ObjectRef, filter string) string {
 	return "SELECT count_big(*) FROM " + d.target(ref) + whereClause(filter)
 }
+
+// DescribeObject reads the sys.* catalog views rather than INFORMATION_SCHEMA,
+// which does not expose identity, computed columns or index metadata. Each view
+// is reached through a three-part name so one connection can describe an object
+// in any database on the server, and the object itself is identified by
+// OBJECT_ID of its qualified name.
+//
+// Descriptions live in sys.extended_properties under the MS_Description name,
+// which is a convention rather than a built-in comment column — an object with
+// no such property is simply uncommented, not unsupported.
+func (d mssqlDriver) DescribeObject(ctx context.Context, db *sql.DB, ref ObjectRef) (*ObjectDetail, error) {
+	det := &ObjectDetail{Ref: ref, Type: ObjectTable}
+	dbq := d.QuoteIdent(ref.Database)
+	obj := d.target(ref)
+
+	var err error
+	if det.Columns, err = d.describeColumns(ctx, db, dbq, obj); err != nil {
+		return nil, err
+	}
+	if det.Indexes, err = d.describeIndexes(ctx, db, dbq, obj); err != nil {
+		return nil, err
+	}
+	if det.ForeignKeys, err = d.describeForeignKeys(ctx, db, dbq, obj); err != nil {
+		return nil, err
+	}
+	if det.Triggers, err = d.describeTriggers(ctx, db, dbq, obj); err != nil {
+		return nil, err
+	}
+	if det.Checks, err = d.describeChecks(ctx, db, dbq, obj); err != nil {
+		return nil, err
+	}
+	det.PrimaryKey = primaryKeyOf(det.Indexes, det.Columns)
+
+	if err := d.describeObjectFacts(ctx, db, dbq, obj, det); err != nil {
+		return nil, err
+	}
+	return det, nil
+}
+
+func (d mssqlDriver) describeObjectFacts(ctx context.Context, db *sql.DB, dbq, obj string, det *ObjectDetail) error {
+	var objType string
+	var comment sql.NullString
+	var schemaName sql.NullString
+	err := db.QueryRowContext(ctx, fmt.Sprintf(`
+		SELECT o.type_desc, s.name,
+		       (SELECT CAST(ep.value AS nvarchar(max))
+		          FROM %s.sys.extended_properties ep
+		         WHERE ep.major_id = o.object_id AND ep.minor_id = 0
+		           AND ep.name = 'MS_Description')
+		FROM %s.sys.objects o
+		JOIN %s.sys.schemas s ON s.schema_id = o.schema_id
+		WHERE o.object_id = OBJECT_ID(@p1)`, dbq, dbq, dbq), obj,
+	).Scan(&objType, &schemaName, &comment)
+	if err == sql.ErrNoRows {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+
+	isView := strings.HasPrefix(objType, "VIEW")
+	if isView {
+		det.Type = ObjectView
+		var def sql.NullString
+		if err := db.QueryRowContext(ctx, fmt.Sprintf(
+			`SELECT %s.sys.sql_modules.definition FROM %s.sys.sql_modules
+			 WHERE object_id = OBJECT_ID(@p1)`, dbq, dbq), obj).Scan(&def); err == nil && def.Valid {
+			v := def.String
+			det.Definition = &v
+		}
+		det.markUnavailable("rowEstimate", "a view has no stored rows to estimate")
+		det.markUnavailable("sizeBytes", "a view has no storage of its own")
+	} else {
+		// index_id 0 is the heap and 1 the clustered index; a table has one or
+		// the other, never both, so summing over those two covers the base rows
+		// without double-counting nonclustered copies.
+		var rowCount, pages sql.NullInt64
+		if err := db.QueryRowContext(ctx, fmt.Sprintf(`
+			SELECT SUM(p.row_count), SUM(p.used_page_count)
+			FROM %s.sys.dm_db_partition_stats p
+			WHERE p.object_id = OBJECT_ID(@p1) AND p.index_id IN (0, 1)`, dbq), obj,
+		).Scan(&rowCount, &pages); err != nil {
+			det.markUnavailable("rowEstimate", "partition statistics could not be read")
+			det.markUnavailable("sizeBytes", "partition statistics could not be read")
+		} else {
+			if rowCount.Valid {
+				det.RowEstimate = &rowCount.Int64
+			} else {
+				det.markUnavailable("rowEstimate", "no statistics recorded for this table")
+			}
+			if pages.Valid {
+				// Every page is 8 KB.
+				b := pages.Int64 * 8192
+				det.SizeBytes = &b
+			} else {
+				det.markUnavailable("sizeBytes", "no page count recorded for this table")
+			}
+		}
+	}
+
+	if comment.Valid {
+		v := comment.String
+		det.Comment = &v
+	}
+	if schemaName.Valid && schemaName.String != "" {
+		det.DialectDetail = append(det.DialectDetail, KeyValue{Key: "Schema", Value: schemaName.String})
+	}
+	det.DialectDetail = append(det.DialectDetail, KeyValue{Key: "Object type", Value: objType})
+	return nil
+}
+
+func (d mssqlDriver) describeColumns(ctx context.Context, db *sql.DB, dbq, obj string) ([]Column, error) {
+	// The type name is assembled here rather than in the UI so it reads the way
+	// it was declared: nvarchar(50), decimal(10,2), varchar(max). max_length is
+	// in bytes, so an n-type halves it, and -1 means max.
+	rows, err := db.QueryContext(ctx, fmt.Sprintf(`
+		SELECT c.name, t.name, c.max_length, c.precision, c.scale,
+		       c.is_nullable, c.is_identity, c.is_computed, c.column_id,
+		       c.collation_name, dc.definition,
+		       (SELECT CAST(ep.value AS nvarchar(max))
+		          FROM %s.sys.extended_properties ep
+		         WHERE ep.major_id = c.object_id AND ep.minor_id = c.column_id
+		           AND ep.name = 'MS_Description')
+		FROM %s.sys.columns c
+		JOIN %s.sys.types t ON t.user_type_id = c.user_type_id
+		LEFT JOIN %s.sys.default_constraints dc
+		       ON dc.parent_object_id = c.object_id AND dc.parent_column_id = c.column_id
+		WHERE c.object_id = OBJECT_ID(@p1)
+		ORDER BY c.column_id`, dbq, dbq, dbq, dbq), obj)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []Column
+	for rows.Next() {
+		var (
+			name, typ                    string
+			maxLen                       int
+			precision, scale             int
+			nullable, identity, computed bool
+			ordinal                      int
+			collation, def, comment      sql.NullString
+		)
+		if err := rows.Scan(&name, &typ, &maxLen, &precision, &scale,
+			&nullable, &identity, &computed, &ordinal,
+			&collation, &def, &comment); err != nil {
+			return nil, err
+		}
+		c := Column{
+			Name:          name,
+			DataType:      mssqlTypeName(typ, maxLen, precision, scale),
+			Nullable:      nullable,
+			Ordinal:       ordinal,
+			AutoIncrement: identity,
+			Generated:     computed,
+		}
+		if def.Valid {
+			v := def.String
+			c.Default = &v
+		}
+		if collation.Valid {
+			v := collation.String
+			c.Collation = &v
+		}
+		if comment.Valid {
+			v := comment.String
+			c.Comment = &v
+		}
+		out = append(out, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// mssqlTypeName renders a sys.columns row the way the type was declared.
+func mssqlTypeName(base string, maxLen, precision, scale int) string {
+	switch strings.ToLower(base) {
+	case "varchar", "char", "varbinary", "binary":
+		if maxLen == -1 {
+			return base + "(max)"
+		}
+		return fmt.Sprintf("%s(%d)", base, maxLen)
+	case "nvarchar", "nchar":
+		if maxLen == -1 {
+			return base + "(max)"
+		}
+		// max_length counts bytes and these are two bytes per character.
+		return fmt.Sprintf("%s(%d)", base, maxLen/2)
+	case "decimal", "numeric":
+		return fmt.Sprintf("%s(%d,%d)", base, precision, scale)
+	case "datetime2", "datetimeoffset", "time":
+		if scale != 7 {
+			return fmt.Sprintf("%s(%d)", base, scale)
+		}
+	}
+	return base
+}
+
+func (d mssqlDriver) describeIndexes(ctx context.Context, db *sql.DB, dbq, obj string) ([]Index, error) {
+	// Included columns are excluded: they are part of the index payload rather
+	// than its key, and listing them alongside key columns would misrepresent
+	// the ordering that matters.
+	rows, err := db.QueryContext(ctx, fmt.Sprintf(`
+		SELECT i.name, i.is_unique, i.is_primary_key, i.type_desc,
+		       c.name, ic.key_ordinal
+		FROM %s.sys.indexes i
+		JOIN %s.sys.index_columns ic
+		  ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+		JOIN %s.sys.columns c
+		  ON c.object_id = ic.object_id AND c.column_id = ic.column_id
+		WHERE i.object_id = OBJECT_ID(@p1)
+		  AND ic.is_included_column = 0 AND i.name IS NOT NULL
+		ORDER BY i.name, ic.key_ordinal`, dbq, dbq, dbq), obj)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	acc := newIndexAccum()
+	for rows.Next() {
+		var (
+			idxName, method, colName string
+			uniq, primary            bool
+			ord                      int
+		)
+		if err := rows.Scan(&idxName, &uniq, &primary, &method, &colName, &ord); err != nil {
+			return nil, err
+		}
+		acc.add(idxName, colName, uniq, primary, method)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return acc.result(), nil
+}
+
+func (d mssqlDriver) describeForeignKeys(ctx context.Context, db *sql.DB, dbq, obj string) ([]ForeignKey, error) {
+	rows, err := db.QueryContext(ctx, fmt.Sprintf(`
+		SELECT fk.name, pc.name, rs.name, rt.name, rc.name,
+		       fk.update_referential_action_desc,
+		       fk.delete_referential_action_desc,
+		       fkc.constraint_column_id
+		FROM %s.sys.foreign_keys fk
+		JOIN %s.sys.foreign_key_columns fkc
+		  ON fkc.constraint_object_id = fk.object_id
+		JOIN %s.sys.columns pc
+		  ON pc.object_id = fkc.parent_object_id AND pc.column_id = fkc.parent_column_id
+		JOIN %s.sys.columns rc
+		  ON rc.object_id = fkc.referenced_object_id AND rc.column_id = fkc.referenced_column_id
+		JOIN %s.sys.tables rt ON rt.object_id = fk.referenced_object_id
+		JOIN %s.sys.schemas rs ON rs.schema_id = rt.schema_id
+		WHERE fk.parent_object_id = OBJECT_ID(@p1)
+		ORDER BY fk.name, fkc.constraint_column_id`,
+		dbq, dbq, dbq, dbq, dbq, dbq), obj)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	acc := newFKAccum()
+	for rows.Next() {
+		var (
+			name, col, refSchema, refTable, refCol string
+			upd, del                               string
+			ord                                    int
+		)
+		if err := rows.Scan(&name, &col, &refSchema, &refTable, &refCol, &upd, &del, &ord); err != nil {
+			return nil, err
+		}
+		if refSchema == "dbo" {
+			refSchema = ""
+		}
+		// The _desc columns come back as NO_ACTION / SET_NULL; the underscore
+		// is an enum artefact rather than part of the SQL keyword.
+		acc.add(name, col, refSchema, refTable, refCol,
+			strings.ReplaceAll(upd, "_", " "), strings.ReplaceAll(del, "_", " "))
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return acc.result(), nil
+}
+
+func (d mssqlDriver) describeTriggers(ctx context.Context, db *sql.DB, dbq, obj string) ([]Trigger, error) {
+	// sys.trigger_events has one row per event, so a trigger on both INSERT and
+	// UPDATE appears twice and the events are folded together here.
+	rows, err := db.QueryContext(ctx, fmt.Sprintf(`
+		SELECT t.name,
+		       CASE WHEN t.is_instead_of_trigger = 1 THEN 'INSTEAD OF' ELSE 'AFTER' END,
+		       te.type_desc
+		FROM %s.sys.triggers t
+		LEFT JOIN %s.sys.trigger_events te ON te.object_id = t.object_id
+		WHERE t.parent_id = OBJECT_ID(@p1)
+		ORDER BY t.name, te.type_desc`, dbq, dbq), obj)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []Trigger
+	byName := map[string]int{}
+	for rows.Next() {
+		var name, timing string
+		var event sql.NullString
+		if err := rows.Scan(&name, &timing, &event); err != nil {
+			return nil, err
+		}
+		if i, seen := byName[name]; seen {
+			if event.Valid {
+				out[i].Event += " OR " + event.String
+			}
+			continue
+		}
+		byName[name] = len(out)
+		out = append(out, Trigger{Name: name, Timing: timing, Event: event.String})
+	}
+	return out, rows.Err()
+}
+
+func (d mssqlDriver) describeChecks(ctx context.Context, db *sql.DB, dbq, obj string) ([]CheckConstraint, error) {
+	rows, err := db.QueryContext(ctx, fmt.Sprintf(`
+		SELECT name, definition
+		FROM %s.sys.check_constraints
+		WHERE parent_object_id = OBJECT_ID(@p1)
+		ORDER BY name`, dbq), obj)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []CheckConstraint
+	for rows.Next() {
+		var name, def string
+		if err := rows.Scan(&name, &def); err != nil {
+			return nil, err
+		}
+		out = append(out, CheckConstraint{Name: name, Expression: def})
+	}
+	return out, rows.Err()
+}

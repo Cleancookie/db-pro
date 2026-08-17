@@ -45,6 +45,80 @@ export interface Column {
   primaryKey: boolean
   default?: string
   ordinal: number
+  /**
+   * Filled by describeObject only — listColumns leaves these unset so the row
+   * browser stays one cheap query. See internal/driver/driver.go.
+   */
+  autoIncrement?: boolean
+  generated?: boolean
+  comment?: string
+  collation?: string
+}
+
+export interface Index {
+  name: string
+  columns: string[]
+  unique: boolean
+  primary: boolean
+  /** btree, hash, CLUSTERED … blank where the dialect has only one kind. */
+  method?: string
+}
+
+export interface ForeignKey {
+  name: string
+  /** Positionally paired with referencedColumns. */
+  columns: string[]
+  referencedSchema?: string
+  referencedTable: string
+  referencedColumns: string[]
+  onUpdate?: string
+  onDelete?: string
+}
+
+export interface Trigger {
+  name: string
+  timing?: string
+  event?: string
+}
+
+export interface CheckConstraint {
+  name: string
+  expression: string
+}
+
+export interface KeyValue {
+  key: string
+  value: string
+}
+
+/**
+ * Everything the details page shows about one table or view.
+ *
+ * The first group is answerable by all four dialects and is always present.
+ * The second is not: where an engine cannot answer, the field is absent and
+ * `unavailable` carries the reason to print in its place — so a gap reads as a
+ * known limitation rather than as a zero. Never render a value whose name
+ * appears in `unavailable`.
+ */
+export interface ObjectDetail {
+  ref: ObjectRef
+  type: ObjectType
+
+  columns: Column[]
+  primaryKey: string[]
+  indexes: Index[]
+  foreignKeys: ForeignKey[]
+  triggers: Trigger[]
+
+  rowEstimate?: number
+  sizeBytes?: number
+  comment?: string
+  checks: CheckConstraint[]
+  /** View body, for views only. */
+  definition?: string
+
+  dialectDetail?: KeyValue[]
+  unavailable?: Record<string, string>
 }
 
 export interface ObjectRef {

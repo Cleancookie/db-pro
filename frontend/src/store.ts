@@ -10,6 +10,7 @@ import type {
   Column,
   Connection,
   Kind,
+  ObjectDetail,
   ObjectRef,
   ResultSet,
   SchemaObject,
@@ -63,7 +64,7 @@ export type ResultSource = 'browse' | 'sql'
 export type PaletteMode = 'go' | 'do'
 
 /** Which pane fills the main area. */
-export type View = 'data' | 'sql' | 'activity'
+export type View = 'data' | 'sql' | 'activity' | 'details'
 
 /** Collapsible sidebar sections. */
 export type SectionKey = 'connections' | 'databases' | 'objects'
@@ -126,6 +127,11 @@ interface State {
   sqlText: string
   sqlResult: ResultSet | null
 
+  // table details page
+  detail: ObjectDetail | null
+  detailLoading: boolean
+  detailError: string | null
+
   // ui
   view: View
   collapsed: Record<SectionKey, boolean>
@@ -160,6 +166,14 @@ interface State {
   toggleSort: (column: string) => Promise<void>
   clearSort: () => Promise<void>
   setView: (v: View) => void
+  /**
+   * Loads the details of a table or view and shows the details page.
+   *
+   * Nothing is cached: the page is opened deliberately and the interesting
+   * numbers (row estimate, size) are the ones that move, so a stale panel would
+   * be worse than a second of loading.
+   */
+  openDetails: (ref: ObjectRef) => Promise<void>
   toggleSection: (k: SectionKey) => void
   loadSettings: () => Promise<void>
   saveSettings: (s: Settings) => Promise<void>
@@ -296,6 +310,9 @@ export const useStore = create<State>((set, get) => {
     totalCount: null,
     sqlText: '',
     sqlResult: null,
+    detail: null,
+    detailLoading: false,
+    detailError: null,
     view: 'data',
     collapsed: { connections: false, databases: false, objects: false },
     settings: DEFAULT_SETTINGS,
@@ -484,6 +501,18 @@ export const useStore = create<State>((set, get) => {
       if (get().orderBy.length === 0) return
       set({ orderBy: [], page: 1 })
       await fetchRows()
+    },
+
+    async openDetails(ref) {
+      const connID = get().activeConnectionId
+      if (!connID) return
+      set({ view: 'details', detailLoading: true, detailError: null, detail: null })
+      try {
+        const detail = await api.describeObject(connID, ref)
+        set({ detail, detailLoading: false })
+      } catch (e) {
+        set({ detailError: String(e), detailLoading: false })
+      }
     },
 
     setView(view) {

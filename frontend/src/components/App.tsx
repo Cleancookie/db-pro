@@ -3,6 +3,7 @@ import { focusFilter } from '../commands'
 import { isTypingTarget } from '../dom'
 import { useStore } from '../store'
 import { ActivityPage } from './ActivityPage'
+import { TableDetailsPage } from './TableDetailsPage'
 import { ActivityTray, ConfirmCancelDialog } from './ActivityTray'
 import { CellDialog } from './CellDialog'
 import { useCellMenu } from './CellMenu'
@@ -49,6 +50,8 @@ export function App() {
         <main className="flex min-w-0 flex-1 flex-col">
           {view === 'activity' ? (
             <ActivityPage />
+          ) : view === 'details' ? (
+            <TableDetailsPage />
           ) : view === 'sql' ? (
             <SqlEditor />
           ) : activeRef ? (
@@ -183,7 +186,13 @@ function useGlobalHotkeys() {
       // out here would pre-empt the close sequence that restores focus to
       // whatever opened them.
       if (e.key === 'Escape') {
-        if (s.palette !== null) s.setPalette(null)
+        if (s.palette !== null) {
+          s.setPalette(null)
+          return
+        }
+        // The details page is a read-only detour from the rows, so Escape backs
+        // out of it the way it closes anything else opened on top.
+        if (s.view === 'details') s.setView('data')
         return
       }
 

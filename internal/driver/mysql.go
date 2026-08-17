@@ -207,3 +207,271 @@ func (d mysqlDriver) BuildSelect(ref ObjectRef, opts ReadOptions, cols []Column)
 func (d mysqlDriver) BuildCount(ref ObjectRef, filter string) string {
 	return "SELECT count(*) FROM " + d.target(ref) + whereClause(filter)
 }
+
+// DescribeObject answers every field: MySQL's information_schema carries row
+// and size statistics, comments at both table and column level, and — from
+// 8.0.16 and MariaDB 10.2 — check constraints. The one version-dependent part
+// is that last table, whose absence is reported as unavailable rather than as
+// an error.
+func (d mysqlDriver) DescribeObject(ctx context.Context, db *sql.DB, ref ObjectRef) (*ObjectDetail, error) {
+	det := &ObjectDetail{Ref: ref, Type: ObjectTable}
+
+	var err error
+	if det.Columns, err = d.describeColumns(ctx, db, ref); err != nil {
+		return nil, err
+	}
+	if det.Indexes, err = d.describeIndexes(ctx, db, ref); err != nil {
+		return nil, err
+	}
+	if det.ForeignKeys, err = d.describeForeignKeys(ctx, db, ref); err != nil {
+		return nil, err
+	}
+	if det.Triggers, err = d.describeTriggers(ctx, db, ref); err != nil {
+		return nil, err
+	}
+	det.PrimaryKey = primaryKeyOf(det.Indexes, det.Columns)
+
+	if err := d.describeTable(ctx, db, ref, det); err != nil {
+		return nil, err
+	}
+	d.describeChecks(ctx, db, ref, det)
+	return det, nil
+}
+
+// describeTable fills the table-level facts and the dialect-specific block.
+func (d mysqlDriver) describeTable(ctx context.Context, db *sql.DB, ref ObjectRef, det *ObjectDetail) error {
+	var (
+		rowsEst, dataLen, idxLen sql.NullInt64
+		comment, engine, coll    sql.NullString
+		tableType                string
+	)
+	err := db.QueryRowContext(ctx, `
+		SELECT table_rows, data_length, index_length, table_comment,
+		       engine, table_collation, table_type
+		FROM information_schema.tables
+		WHERE table_schema = ? AND table_name = ?`,
+		ref.Database, ref.Name,
+	).Scan(&rowsEst, &dataLen, &idxLen, &comment, &engine, &coll, &tableType)
+	if err == sql.ErrNoRows {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+
+	if tableType == "VIEW" {
+		det.Type = ObjectView
+		// A view has no storage, so the statistics below are meaningless for
+		// one rather than merely unknown.
+		det.markUnavailable("rowEstimate", "a view has no stored rows to estimate")
+		det.markUnavailable("sizeBytes", "a view has no storage of its own")
+		var def sql.NullString
+		if err := db.QueryRowContext(ctx,
+			`SELECT view_definition FROM information_schema.views
+			 WHERE table_schema = ? AND table_name = ?`,
+			ref.Database, ref.Name).Scan(&def); err == nil && def.Valid {
+			v := def.String
+			det.Definition = &v
+		}
+	} else {
+		if rowsEst.Valid {
+			det.RowEstimate = &rowsEst.Int64
+		} else {
+			det.markUnavailable("rowEstimate", "no statistics recorded for this table")
+		}
+		if dataLen.Valid || idxLen.Valid {
+			total := dataLen.Int64 + idxLen.Int64
+			det.SizeBytes = &total
+		} else {
+			det.markUnavailable("sizeBytes", "no size reported for this storage engine")
+		}
+	}
+
+	// An empty table_comment is the norm, and is distinct from an engine that
+	// cannot store one — so it stays a present-but-empty value, not a gap.
+	if comment.Valid {
+		v := comment.String
+		det.Comment = &v
+	}
+	if engine.Valid && engine.String != "" {
+		det.DialectDetail = append(det.DialectDetail, KeyValue{Key: "Engine", Value: engine.String})
+	}
+	if coll.Valid && coll.String != "" {
+		det.DialectDetail = append(det.DialectDetail, KeyValue{Key: "Collation", Value: coll.String})
+	}
+	return nil
+}
+
+// describeChecks is best-effort: information_schema.check_constraints does not
+// exist before MySQL 8.0.16 or MariaDB 10.2, and a missing table there is a
+// version fact rather than a failure.
+func (d mysqlDriver) describeChecks(ctx context.Context, db *sql.DB, ref ObjectRef, det *ObjectDetail) {
+	rows, err := db.QueryContext(ctx, `
+		SELECT cc.constraint_name, cc.check_clause
+		FROM information_schema.check_constraints cc
+		JOIN information_schema.table_constraints tc
+		  ON tc.constraint_schema = cc.constraint_schema
+		 AND tc.constraint_name = cc.constraint_name
+		WHERE tc.table_schema = ? AND tc.table_name = ?
+		ORDER BY cc.constraint_name`, ref.Database, ref.Name)
+	if err != nil {
+		det.markUnavailable("checks", "requires MySQL 8.0.16 or MariaDB 10.2 or newer")
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var name, clause string
+		if err := rows.Scan(&name, &clause); err != nil {
+			det.markUnavailable("checks", "could not be read")
+			return
+		}
+		det.Checks = append(det.Checks, CheckConstraint{Name: name, Expression: clause})
+	}
+	if rows.Err() != nil {
+		det.markUnavailable("checks", "could not be read")
+	}
+}
+
+func (d mysqlDriver) describeColumns(ctx context.Context, db *sql.DB, ref ObjectRef) ([]Column, error) {
+	rows, err := db.QueryContext(ctx, `
+		SELECT column_name, column_type, is_nullable, column_default,
+		       ordinal_position, column_key, extra, column_comment, collation_name
+		FROM information_schema.columns
+		WHERE table_schema = ? AND table_name = ?
+		ORDER BY ordinal_position`, ref.Database, ref.Name)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []Column
+	for rows.Next() {
+		var (
+			name, typ, nullable, key string
+			def, comment, coll       sql.NullString
+			extra                    string
+			ord                      int
+		)
+		if err := rows.Scan(&name, &typ, &nullable, &def, &ord, &key, &extra, &comment, &coll); err != nil {
+			return nil, err
+		}
+		c := Column{
+			Name:       name,
+			DataType:   typ,
+			Nullable:   strings.EqualFold(nullable, "YES"),
+			PrimaryKey: key == "PRI",
+			Ordinal:    ord,
+			// extra carries several space-separated words; auto_increment and
+			// the GENERATED markers are matched rather than compared.
+			AutoIncrement: strings.Contains(strings.ToLower(extra), "auto_increment"),
+			Generated:     strings.Contains(strings.ToUpper(extra), "GENERATED"),
+		}
+		if def.Valid {
+			v := def.String
+			c.Default = &v
+		}
+		if comment.Valid && comment.String != "" {
+			v := comment.String
+			c.Comment = &v
+		}
+		if coll.Valid {
+			v := coll.String
+			c.Collation = &v
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+func (d mysqlDriver) describeIndexes(ctx context.Context, db *sql.DB, ref ObjectRef) ([]Index, error) {
+	rows, err := db.QueryContext(ctx, `
+		SELECT index_name, non_unique, column_name, index_type, seq_in_index
+		FROM information_schema.statistics
+		WHERE table_schema = ? AND table_name = ?
+		ORDER BY index_name, seq_in_index`, ref.Database, ref.Name)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	acc := newIndexAccum()
+	for rows.Next() {
+		var (
+			idxName, idxType string
+			colName          sql.NullString
+			nonUnique, seq   int
+		)
+		if err := rows.Scan(&idxName, &nonUnique, &colName, &idxType, &seq); err != nil {
+			return nil, err
+		}
+		acc.add(idxName, colName.String, nonUnique == 0, idxName == "PRIMARY", idxType)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return acc.result(), nil
+}
+
+func (d mysqlDriver) describeForeignKeys(ctx context.Context, db *sql.DB, ref ObjectRef) ([]ForeignKey, error) {
+	rows, err := db.QueryContext(ctx, `
+		SELECT k.constraint_name, k.column_name,
+		       k.referenced_table_schema, k.referenced_table_name, k.referenced_column_name,
+		       r.update_rule, r.delete_rule
+		FROM information_schema.key_column_usage k
+		JOIN information_schema.referential_constraints r
+		  ON r.constraint_schema = k.constraint_schema
+		 AND r.constraint_name = k.constraint_name
+		WHERE k.table_schema = ? AND k.table_name = ?
+		  AND k.referenced_table_name IS NOT NULL
+		ORDER BY k.constraint_name, k.ordinal_position`, ref.Database, ref.Name)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	acc := newFKAccum()
+	for rows.Next() {
+		var (
+			name, col, refTable, refCol string
+			refSchema                   sql.NullString
+			onUpdate, onDelete          string
+		)
+		if err := rows.Scan(&name, &col, &refSchema, &refTable, &refCol, &onUpdate, &onDelete); err != nil {
+			return nil, err
+		}
+		// MySQL has no schema level, so a referenced schema equal to the
+		// current database adds nothing and is dropped.
+		rs := refSchema.String
+		if rs == ref.Database {
+			rs = ""
+		}
+		acc.add(name, col, rs, refTable, refCol, onUpdate, onDelete)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return acc.result(), nil
+}
+
+func (d mysqlDriver) describeTriggers(ctx context.Context, db *sql.DB, ref ObjectRef) ([]Trigger, error) {
+	rows, err := db.QueryContext(ctx, `
+		SELECT trigger_name, action_timing, event_manipulation
+		FROM information_schema.triggers
+		WHERE event_object_schema = ? AND event_object_table = ?
+		ORDER BY trigger_name`, ref.Database, ref.Name)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []Trigger
+	for rows.Next() {
+		var name, timing, event string
+		if err := rows.Scan(&name, &timing, &event); err != nil {
+			return nil, err
+		}
+		out = append(out, Trigger{Name: name, Timing: timing, Event: event})
+	}
+	return out, rows.Err()
+}

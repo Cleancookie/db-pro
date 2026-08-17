@@ -98,6 +98,10 @@ func (a *App) ListColumns(id string, ref driver.ObjectRef) ([]driver.Column, err
 	return a.svc.ListColumns(a.ctx, id, ref)
 }
 
+func (a *App) DescribeObject(id string, ref driver.ObjectRef) (*driver.ObjectDetail, error) {
+	return a.svc.DescribeObject(a.ctx, id, ref)
+}
+
 func (a *App) ReadRows(req api.ReadRowsRequest) (*api.ReadRowsResult, error) {
 	return a.svc.ReadRows(a.ctx, req)
 }
