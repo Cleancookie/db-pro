@@ -8,6 +8,7 @@
  */
 
 import { schemaBias, type Candidate } from './fuzzy'
+import { reportText } from './startup'
 import { PAGE_SIZES, type useStore } from './store'
 import type { ObjectType, SchemaObject } from './types'
 
@@ -158,6 +159,21 @@ export function buildCommands(s: Store): Command[] {
       keywords: 'activity tray monitor cancel kill progress loading elapsed',
     },
     run: () => s.setTrayOpen(!s.trayOpen),
+  })
+
+  cmds.push({
+    id: 'app:startup-timing',
+    title: 'Show startup timing',
+    subtitle: 'Where launch time went, this run',
+    group: 'App',
+    candidate: { name: 'Startup timing', keywords: 'slow launch boot performance profile' },
+    // A toast rather than a console log: the Windows build is launched from
+    // Explorer, where there is no console to read. Also logged, for when
+    // devtools *is* open and the toast has already timed out.
+    run: () => {
+      console.info('startup:', reportText())
+      s.pushToast('info', reportText())
+    },
   })
 
   cmds.push({

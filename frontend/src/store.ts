@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { api, errorMessage } from './api'
 import { absoluteRowOffset, cellText, isCellTruncated } from './cells'
+import { mark } from './startup'
 import type {
   ActivityResult,
   Capabilities,
@@ -298,6 +299,7 @@ export const useStore = create<State>((set, get) => {
           paginationEnabled: settings.paginationEnabled,
         })
         applyFontSize(settings.fontSizePx)
+        mark('config loaded')
       } catch (e) {
         get().pushToast('error', errorMessage(e))
       }

@@ -216,8 +216,8 @@ in rem, so the root-size knob in Settings scales it.
 | Question | Choice |
 | --- | --- |
 | Which editor | **CodeMirror 6**, not Monaco. Monaco is megabytes and wants a web worker, which is awkward with assets embedded in a Wails binary. CodeMirror is modular, worker-free, and ships per-dialect SQL |
-| Measured cost | **+121 kB gzipped** (124 → 245). Accepted: on disk it is nothing against a 21 MB exe, and the cost is startup parse time |
-| Lazy-load it? | No. The filter box is on screen as soon as a table is open, so it is needed almost immediately anyway |
+| Measured cost | 120 kB gzipped. Loaded on demand, so the **startup** chunk is 126 kB against 124 kB before the editor existed |
+| Lazy-load it? | **Yes** — `ui/LazyEditor.tsx`. Decided after the user reported a slower launch. At launch neither surface that uses the editor is mounted: the filter bar renders only once a table is open, the SQL editor only on the SQL view. Eager loading made every launch pay for something many sessions never touch. `ui/index.ts` must keep exporting the lazy wrapper or the split is silently undone |
 | Where the vendor lives | `frontend/src/ui/Editor.tsx` only, per the house rule. The narrow API is value/onChange/onSubmit/onCancel/singleLine/dialect/completion; no CodeMirror type is exported |
 | What can be completed | `src/completion.ts` — plain data, no editor API, so the candidate rules are unit-tested without a DOM |
 | Ranking | Columns of the open table first (primary key above its siblings), then tables and views, then functions, then keywords. A predicate is overwhelmingly about the columns in front of you |
@@ -225,6 +225,21 @@ in rem, so the root-size knob in Settings scales it.
 | Editor candidates | The above plus objects in the database and statement keywords. Columns are still the open table's: knowing which table a half-typed statement means would need parsing, so the detail text names the table each column came from rather than pretending |
 | Key handling | Enter (filter) and Ctrl+Enter (editor) submit *only* when the popup is closed; Escape closes the popup first and reverts the filter second. Tab accepts a completion, else indents |
 | Caret inside a string literal | No popup at all. Completing a column name into `'act…'` would be wrong every time |
+
+### Startup timing, same day
+
+> also my app takes a while to launch now. could we debug why? or maybe we just
+> add some logging in so you can investigate later
+
+The editor was the cause and is fixed by the lazy split above. Instrumentation
+was added anyway, because launch feel cannot be measured from a test: `main.go`
+logs config-loaded and webview-ready elapsed, and `frontend/src/startup.ts`
+marks script-start, react-mount and config-loaded. The first frontend mark is
+itself the measurement of webview boot plus bundle parse.
+
+Reported through a palette command ("Show startup timing") as well as the
+console, because the Windows build is launched from Explorer where there is no
+console to read.
 
 `focusFilter` had to change: the filter is no longer an `<input>`, so focusing
 it through `document.getElementById` would land on a div. The editor registers a

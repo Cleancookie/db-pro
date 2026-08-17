@@ -25,11 +25,17 @@ which is awkward when assets are embedded in a Wails binary. CodeMirror 6 is
 modular enough to pay only for what is imported, needs no worker, and ships
 real per-dialect SQL support.
 
-It is still the largest dependency in the app — **+121 kB gzipped** — which is
-worth knowing before adding more of it. On disk that is nothing next to a 21 MB
-binary; the cost is parse and startup time. Lazy-loading it was considered and
-skipped: the filter box is on screen as soon as a table is open, so the editor
-is needed almost immediately anyway.
+It is still the largest dependency in the app — **+120 kB gzipped** — which is
+worth knowing before adding more of it.
+
+It is therefore **loaded on demand**, via `LazyEditor.tsx`, and `ui/index.ts`
+exports that wrapper rather than `Editor.tsx` itself. Importing the real one
+from anywhere eager puts CodeMirror back in the startup bundle and undoes the
+split. This matters more than it first appears: at launch *neither* surface
+that uses the editor is mounted — the filter bar renders only once a table is
+open, the SQL editor only on the SQL view — so eager loading made every launch
+pay for something many sessions never touch. With the split, the startup chunk
+is 126 kB gzipped against 124 kB before the editor existed.
 
 The narrow API is `value`, `onChange`, `onSubmit`, `onCancel`, `singleLine`,
 `dialect` and `completion` — no CodeMirror type is exported, and the app's

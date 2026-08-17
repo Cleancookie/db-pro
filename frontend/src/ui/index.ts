@@ -8,5 +8,7 @@ export { Dialog, FormDialog, dialogButton } from './Dialog'
 export type { DialogProps } from './Dialog'
 export { ContextMenu } from './Menu'
 export type { ContextMenuProps, MenuItem } from './Menu'
-export { Editor } from './Editor'
+// Deliberately the lazy wrapper, not ./Editor itself — importing the real one
+// here would pull CodeMirror into the startup bundle and undo the split.
+export { Editor } from './LazyEditor'
 export type { EditorProps, EditorHandle, EditorCompletion } from './Editor'
