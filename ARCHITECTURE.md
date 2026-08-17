@@ -141,6 +141,37 @@ Three modes, chosen in the UI and carried on every `ReadRows` request:
   `SELECT count(*)` on a large table is slow and should not be on the hot path of
   every page turn. The UI fetches a page first, then the count in the background.
 
+## Query activity
+
+`internal/activity.Registry` wraps every query the app issues, so what is
+in-flight is a fact the backend already holds and cancellation is just closing
+that query's context. Two surfaces read it, split by the shape of the data:
+
+- **The tray** (`components/ActivityTray.tsx`) — in-flight queries. Ephemeral,
+  one line each, wanted while looking at something else, so it lives along the
+  bottom of every view with a collapsed strip that is always visible.
+- **The page** (`components/ActivityPage.tsx`) — `activity.sessions`, the pool
+  stats per open connection. Stable and tabular; a page, reached by
+  `Ctrl+Shift+A`.
+
+Three things about the tray are deliberate:
+
+- **Polling is driven by demand, not by a clock.** The store keeps an
+  `inFlight` count, incremented around each call that runs SQL. The tray polls
+  only while that is non-zero, while it is expanded, or while the connections
+  page is open — and polls once more on the way down, so a finished query
+  leaves the list. An idle app issues nothing.
+- **Timers tick locally.** `elapsedMs` is measured by Go at poll time;
+  `frontend/src/activity.ts` adds the time since that response arrived. The
+  timer therefore advances every 100ms while the network sees a request every
+  700ms. `startedAt` is never used for arithmetic — it is the server's wall
+  clock, and skew would show a new query as minutes old.
+- **The strip's height never changes.** A query starting must not resize the
+  grid, so the strip is fixed and the expanded list is an overlay above it.
+
+Progress is indeterminate by construction: nothing knows how long a query will
+take, so the bar shows motion and the timer next to it shows the fact.
+
 ## Type handling
 
 `sql.Rows` gives back `[]byte` for most driver types. `internal/driver/scan.go`

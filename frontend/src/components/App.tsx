@@ -3,6 +3,7 @@ import { focusFilter } from '../commands'
 import { transportName } from '../api'
 import { useStore } from '../store'
 import { ActivityPage } from './ActivityPage'
+import { ActivityTray } from './ActivityTray'
 import { CommandPalette } from './CommandPalette'
 import { ConfirmDeleteDialog } from './ConnectionMenu'
 import { ConnectionDialog } from './ConnectionDialog'
@@ -27,9 +28,7 @@ export function App() {
   const page = useStore((s) => s.page)
   const pageSize = useStore((s) => s.pageSize)
   const paginationEnabled = useStore((s) => s.paginationEnabled)
-  const runningCount = useStore((s) => s.activity.queries.length)
   const toggleSort = useStore((s) => s.toggleSort)
-  const setView = useStore((s) => s.setView)
 
   useEffect(() => {
     void init()
@@ -55,15 +54,6 @@ export function App() {
         )}
 
         <div className="ml-auto flex items-center gap-2">
-          {runningCount > 0 && view !== 'activity' && (
-            <button
-              onClick={() => setView('activity')}
-              title="Show running queries"
-              className="rounded border border-[var(--color-warn)]/50 px-2 py-0.5 text-xs text-[var(--color-warn)]"
-            >
-              {runningCount} running
-            </button>
-          )}
           <button
             onClick={() => useStore.getState().setDialog({ kind: 'settings' })}
             title="Settings (Ctrl+,)"
@@ -109,6 +99,10 @@ export function App() {
           )}
         </main>
       </div>
+
+      {/* Below every view, including the activity page: what is running is
+          worth knowing wherever the user happens to be. */}
+      <ActivityTray />
 
       <CommandPalette />
       {dialog.kind === 'connection' && <ConnectionDialog existing={dialog.connection} />}
@@ -191,6 +185,13 @@ function useGlobalHotkeys() {
       if (mod && e.shiftKey && e.key.toLowerCase() === 'a') {
         e.preventDefault()
         s.setView(s.view === 'activity' ? 'data' : 'activity')
+        return
+      }
+
+      // Ctrl+J for the bottom tray, as in every editor with a bottom panel.
+      if (mod && e.key.toLowerCase() === 'j') {
+        e.preventDefault()
+        s.setTrayOpen(!s.trayOpen)
         return
       }
 

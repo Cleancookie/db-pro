@@ -82,6 +82,13 @@ interface State {
   collapsed: Record<SectionKey, boolean>
   settings: Settings
   activity: ActivityResult
+  /** When the activity snapshot was taken, so the tray can tick its timers on
+   *  between polls. See frontend/src/activity.ts. */
+  activityPolledAt: number
+  /** How many API calls the app is currently waiting on. The tray polls only
+   *  while this is above zero, so an idle app issues no requests at all. */
+  inFlight: number
+  trayOpen: boolean
   paletteOpen: boolean
   dialog: DialogState
   busy: boolean
@@ -108,6 +115,7 @@ interface State {
   saveSettings: (s: Settings) => Promise<void>
   refreshActivity: () => Promise<void>
   cancelQuery: (id: string) => Promise<void>
+  setTrayOpen: (open: boolean) => void
   setSqlText: (t: string) => void
   runSql: () => Promise<void>
   saveConnection: (c: Connection, password: string | null) => Promise<void>
@@ -128,6 +136,21 @@ let requestSeq = 0
 let toastSeq = 0
 
 export const useStore = create<State>((set, get) => {
+  /**
+   * Wraps a call that runs SQL on the server. The count it maintains is what
+   * tells the activity tray there is something worth polling for — the tray
+   * cannot know from the outside, and polling on a timer regardless would mean
+   * a request every second on an app sitting untouched.
+   */
+  async function tracked<T>(fn: () => Promise<T>): Promise<T> {
+    set({ inFlight: get().inFlight + 1 })
+    try {
+      return await fn()
+    } finally {
+      set({ inFlight: get().inFlight - 1 })
+    }
+  }
+
   /** Fetches the current page and, separately, the total count. */
   async function fetchRows() {
     const s = get()
@@ -138,17 +161,19 @@ export const useStore = create<State>((set, get) => {
     set({ busy: true })
 
     try {
-      const res = await api.readRows({
-        connectionId: activeConnectionId,
-        ref: activeRef,
-        filter,
-        orderBy,
-        pagination: {
-          enabled: s.paginationEnabled,
-          page: s.page,
-          pageSize: s.pageSize,
-        },
-      })
+      const res = await tracked(() =>
+        api.readRows({
+          connectionId: activeConnectionId,
+          ref: activeRef,
+          filter,
+          orderBy,
+          pagination: {
+            enabled: s.paginationEnabled,
+            page: s.page,
+            pageSize: s.pageSize,
+          },
+        }),
+      )
       if (seq !== requestSeq) return
       set({
         result: res.result,
@@ -172,11 +197,13 @@ export const useStore = create<State>((set, get) => {
     void (async () => {
       set({ totalCount: null })
       try {
-        const n = await api.countRows({
-          connectionId: activeConnectionId,
-          ref: activeRef,
-          filter,
-        })
+        const n = await tracked(() =>
+          api.countRows({
+            connectionId: activeConnectionId,
+            ref: activeRef,
+            filter,
+          }),
+        )
         if (seq === requestSeq) set({ totalCount: n })
       } catch {
         // A failed count is not worth interrupting the user over — the grid
@@ -210,6 +237,9 @@ export const useStore = create<State>((set, get) => {
     collapsed: { connections: false, databases: false, objects: false },
     settings: DEFAULT_SETTINGS,
     activity: { queries: [], sessions: [] },
+    activityPolledAt: 0,
+    inFlight: 0,
+    trayOpen: false,
     paletteOpen: false,
     dialog: { kind: 'none' },
     busy: false,
@@ -249,7 +279,7 @@ export const useStore = create<State>((set, get) => {
     async connect(id) {
       set({ busy: true })
       try {
-        const res = await api.connect(id)
+        const res = await tracked(() => api.connect(id))
         const databases = res.databases.map((d) => d.name)
         const active = res.defaultDatabase || databases[0] || ''
         set({
@@ -304,7 +334,7 @@ export const useStore = create<State>((set, get) => {
       if (!id) return
       set({ activeDatabase: name, busy: true, objects: [] })
       try {
-        const objects = await api.listObjects(id, name)
+        const objects = await tracked(() => api.listObjects(id, name))
         set({ objects, busy: false })
       } catch (e) {
         set({ busy: false })
@@ -415,10 +445,13 @@ export const useStore = create<State>((set, get) => {
 
     async refreshActivity() {
       try {
-        set({ activity: await api.activity() })
+        const activity = await api.activity()
+        // The stamp is taken after the response lands, because it is what the
+        // tray's tick counts forward from.
+        set({ activity, activityPolledAt: Date.now() })
       } catch {
-        // The activity page polls; a transient failure would otherwise
-        // produce a stream of toasts the user cannot act on.
+        // The tray polls; a transient failure would otherwise produce a stream
+        // of toasts the user cannot act on.
       }
     },
 
@@ -429,6 +462,13 @@ export const useStore = create<State>((set, get) => {
       } catch (e) {
         get().pushToast('error', errorMessage(e))
       }
+    },
+
+    setTrayOpen(trayOpen) {
+      set({ trayOpen })
+      // Expanding should show the current list immediately rather than after
+      // the first poll tick.
+      if (trayOpen) void get().refreshActivity()
     },
 
     setSqlText(sqlText) {
@@ -442,14 +482,17 @@ export const useStore = create<State>((set, get) => {
         return
       }
       if (!s.sqlText.trim()) return
+      const connectionId = s.activeConnectionId
       set({ busy: true })
       try {
-        const res = await api.runSql({
-          connectionId: s.activeConnectionId,
-          database: s.activeDatabase,
-          sql: s.sqlText,
-          maxRows: 0,
-        })
+        const res = await tracked(() =>
+          api.runSql({
+            connectionId,
+            database: s.activeDatabase,
+            sql: s.sqlText,
+            maxRows: 0,
+          }),
+        )
         set({ sqlResult: res, busy: false })
         if (res.rowsAffected != null) {
           s.pushToast('info', `${res.rowsAffected} row(s) affected in ${res.elapsedMs}ms`)

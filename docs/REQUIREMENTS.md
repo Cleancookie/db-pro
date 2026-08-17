@@ -93,6 +93,35 @@ Pushed to `git@github.com:Cleancookie/db-pro.git`.
 
 ---
 
+## 2026-08-17 — always-visible query activity
+
+### Brief
+
+> also can you add an item such that it is a loading bar so I know it's doing
+> something? or maybe we should make the currently running queries visible
+> somewhere maybe a folding bottom tray like on tableplus with a loading bar /
+> timer on each query
+
+Delivered as `frontend/src/components/ActivityTray.tsx`: a strip along the
+bottom on every view, collapsed by default, `Ctrl+J` to expand. The strip says
+how many queries are running and how long the oldest has been going; expanded,
+each query gets a ticking timer, an indeterminate bar and a Cancel.
+
+### Decisions
+
+| Question | Choice |
+| --- | --- |
+| Tray or page? | **Both, split by shape.** The tray owns in-flight queries; the activity page keeps the server-side pools, renamed "Open connections" |
+| Progress semantics | Indeterminate only. A query's duration is not knowable up front and a fabricated percentage would be a lie |
+| Cost when idle | The store counts in-flight API calls; the tray polls only while that is non-zero, the tray is open, or the connections page is on screen. An untouched app issues nothing |
+| Timer smoothness | Poll at 700ms, tick locally at 100ms from the last snapshot. Never recompute from `startedAt` — that is the server's clock |
+| Layout | The expanded list is an overlay, so starting a query never resizes the grid |
+
+The header's old "N running" button went away: the strip says the same thing
+permanently, and two indicators for one fact drift apart.
+
+---
+
 ## Invariants
 
 Things that are true on purpose. Breaking one should be a decision, not an
@@ -123,6 +152,8 @@ test — which is the intended speed bump.
 | Nothing outside `frontend/src/ui/` imports a component library | The swap-out guarantee. A leak silently voids it |
 | The palette matches the object *name* first; schema and keywords only at a discount | Otherwise "user" returns everything in a schema containing those letters |
 | Palette results are cut relative to the best score | Fuzzy matching is permissive by nature; ordering alone does not narrow a list |
+| Activity polling is driven by the store's in-flight count, never by a bare timer | An idle app must issue no requests. A poller that runs regardless is a background load on every connected database |
+| Query timers extrapolate from the last snapshot, never from `startedAt` | `startedAt` is the server's wall clock; clock skew would show a fresh query as minutes old |
 | The UI is sized in `rem` from a single root font size | The Settings slider must scale spacing and controls, not just text |
 | `frontend/dist/.gitkeep` stays tracked, and builds must not delete it | `main.go` embeds `frontend/dist`; without it a fresh clone will not compile |
 
