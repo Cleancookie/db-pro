@@ -80,6 +80,44 @@ button {
   color: inherit;
 }
 
+/* Indeterminate progress, used by the activity tray. A query's duration cannot
+   be known before it finishes, so the bar carries no percentage — it only says
+   that work is still moving. The sliver is a pseudo-element so the track keeps
+   its own background, and it is transform-animated so it never triggers
+   layout. */
+.indeterminate {
+  position: relative;
+  display: inline-block;
+  overflow: hidden;
+  background: var(--color-border);
+}
+.indeterminate::after {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 40%;
+  border-radius: inherit;
+  background: var(--color-accent);
+  animation: indeterminate-slide 1.1s ease-in-out infinite;
+}
+/* A query being cancelled is still running; the colour says which. */
+.indeterminate-warn::after {
+  background: var(--color-warn);
+}
+@keyframes indeterminate-slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(250%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .indeterminate::after {
+    animation-duration: 3s;
+  }
+}
+
 /* A visible focus ring matters more than usual here: the app is driven by the
    keyboard, so where focus sits must never be ambiguous. */
 :focus-visible {

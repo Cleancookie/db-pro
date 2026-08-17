@@ -136,15 +136,33 @@ export interface Settings {
 
 export type QueryKind = 'browse' | 'count' | 'query' | 'introspect'
 
-export interface RunningQuery {
+/**
+ * The app's own lifecycle states, instrumented in internal/activity,
+ * internal/driver and internal/api — not the server's view of the query. The
+ * last three are terminal: an entry carrying one of them is history.
+ */
+export type QueryPhase =
+  | 'queued'
+  | 'executing'
+  | 'reading rows'
+  | 'cancelling'
+  | 'done'
+  | 'failed'
+  | 'cancelled'
+
+/** One query, running or finished. Mirrors internal/activity.Info. */
+export interface QueryInfo {
   id: string
   connectionId: string
   database: string
   kind: QueryKind
   sql: string
   startedAt: string
+  /** Frozen once the phase is terminal. */
   elapsedMs: number
-  cancelled: boolean
+  phase: QueryPhase
+  rowsRead: number
+  error?: string
 }
 
 export interface SessionInfo {
@@ -156,6 +174,7 @@ export interface SessionInfo {
 }
 
 export interface ActivityResult {
-  queries: RunningQuery[]
+  /** Running queries newest-first, then the bounded history newest-first. */
+  queries: QueryInfo[]
   sessions: SessionInfo[]
 }

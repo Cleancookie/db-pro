@@ -1,40 +1,20 @@
-import { useEffect } from 'react'
-import { formatDuration } from '../commands'
+import { isRunning } from '../activity'
 import { useStore } from '../store'
-import type { QueryKind } from '../types'
-
-/** How often the page re-polls while it is open. */
-const POLL_MS = 700
-
-const KIND_LABEL: Record<QueryKind, string> = {
-  browse: 'browse',
-  count: 'count',
-  query: 'editor',
-  introspect: 'catalogue',
-}
 
 /**
- * Shows what the app currently has open and what it is running, and lets the
- * user cancel anything that is taking too long.
+ * The server-side view: which connections are open, to which databases, and
+ * what each pool is doing. Stable, tabular, and worth reading a column at a
+ * time — which is why it is a page and the in-flight queries are a tray.
  *
- * Cancelling closes the query's context, which database/sql propagates to the
- * driver — so this really does stop work on the server, not just in the UI.
+ * The tray is the only activity poller; this page reads the same snapshot from
+ * the store. See ActivityTray.tsx.
  */
 export function ActivityPage() {
   const activity = useStore((s) => s.activity)
-  const refresh = useStore((s) => s.refreshActivity)
-  const cancelQuery = useStore((s) => s.cancelQuery)
   const connections = useStore((s) => s.connections)
   const setView = useStore((s) => s.setView)
+  const setTrayOpen = useStore((s) => s.setTrayOpen)
   const disconnect = useStore((s) => s.disconnect)
-
-  // Polling only runs while this page is mounted, so a background tab is not
-  // issuing requests forever.
-  useEffect(() => {
-    void refresh()
-    const t = setInterval(() => void refresh(), POLL_MS)
-    return () => clearInterval(t)
-  }, [refresh])
 
   const nameOf = (id: string) => connections.find((c) => c.id === id)?.name ?? id
 
@@ -42,12 +22,18 @@ export function ActivityPage() {
     <div className="flex h-full flex-col">
       <div className="chrome flex items-center gap-2 border-b border-[var(--color-border)] bg-[var(--color-panel)] px-3 py-1.5">
         <span className="text-[0.625rem] font-semibold tracking-wider text-[var(--color-faint)] uppercase">
-          Activity
+          Connections
         </span>
         <span className="text-xs text-[var(--color-faint)]">
-          {activity.queries.length} running · {activity.sessions.length} open connection
+          {activity.sessions.length} open connection
           {activity.sessions.length === 1 ? '' : 's'}
         </span>
+        <button
+          onClick={() => setTrayOpen(true)}
+          className="text-xs text-[var(--color-accent)] hover:underline"
+        >
+          {activity.queries.filter(isRunning).length} running — show in the tray
+        </button>
         <button
           onClick={() => setView('data')}
           className="ml-auto rounded px-1.5 text-[var(--color-muted)] hover:bg-[var(--color-elevated)] hover:text-[var(--color-text)]"
@@ -58,52 +44,6 @@ export function ActivityPage() {
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
-        <h3 className="mb-2 text-[0.625rem] font-semibold tracking-wider text-[var(--color-faint)] uppercase">
-          Running queries
-        </h3>
-        {activity.queries.length === 0 ? (
-          <p className="mb-6 rounded border border-[var(--color-border)] px-3 py-4 text-center text-[var(--color-faint)]">
-            Nothing running
-          </p>
-        ) : (
-          <ul className="mb-6 flex flex-col gap-2">
-            {activity.queries.map((q) => (
-              <li
-                key={q.id}
-                className="rounded border border-[var(--color-border-strong)] bg-[var(--color-panel)] p-3"
-              >
-                <div className="mb-1.5 flex flex-wrap items-center gap-2 text-xs">
-                  <span className="rounded bg-[var(--color-accent-dim)]/40 px-1.5 py-0.5">
-                    {KIND_LABEL[q.kind] ?? q.kind}
-                  </span>
-                  <span className="text-[var(--color-muted)]">{nameOf(q.connectionId)}</span>
-                  {q.database && <span className="text-[var(--color-faint)]">/ {q.database}</span>}
-                  <span
-                    className={
-                      q.elapsedMs > 5000 ? 'text-[var(--color-warn)]' : 'text-[var(--color-faint)]'
-                    }
-                  >
-                    {formatDuration(q.elapsedMs)}
-                  </span>
-                  {q.cancelled && (
-                    <span className="text-[var(--color-warn)]">cancelling…</span>
-                  )}
-                  <button
-                    onClick={() => void cancelQuery(q.id)}
-                    disabled={q.cancelled}
-                    className="ml-auto rounded border border-[var(--color-border-strong)] px-2 py-0.5 text-[var(--color-danger)] disabled:opacity-40 enabled:hover:border-[var(--color-danger)]"
-                  >
-                    Cancel
-                  </button>
-                </div>
-                <pre className="max-h-24 overflow-auto rounded bg-[var(--color-bg)] p-2 font-[var(--font-mono)] text-xs whitespace-pre-wrap text-[var(--color-muted)]">
-                  {q.sql}
-                </pre>
-              </li>
-            ))}
-          </ul>
-        )}
-
         <h3 className="mb-2 text-[0.625rem] font-semibold tracking-wider text-[var(--color-faint)] uppercase">
           Open connections
         </h3>

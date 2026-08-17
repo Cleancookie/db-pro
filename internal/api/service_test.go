@@ -708,3 +708,80 @@ func TestConnectionsPersistAcrossRestart(t *testing.T) {
 		t.Errorf("password did not survive restart, got %q", got)
 	}
 }
+
+// --- activity ----------------------------------------------------------------------
+
+// The phases the tray shows are instrumented, not inferred, so they are worth
+// asserting through the whole stack: api -> driver -> registry.
+func TestActivityRecordsFinishedQueriesWithTheirPhase(t *testing.T) {
+	svc, id := newTestService(t)
+	seed(t, svc, id, 3)
+
+	if _, err := svc.RunSQL(context.Background(), RunSQLRequest{
+		ConnectionID: id,
+		SQL:          "SELECT * FROM orders",
+	}); err != nil {
+		t.Fatalf("select: %v", err)
+	}
+
+	got := svc.Activity().Queries
+	if len(got) == 0 {
+		t.Fatal("Activity() reported no queries; the history is empty")
+	}
+	// Newest first, and nothing is still running by the time RunSQL returns.
+	latest := got[0]
+	if latest.Phase != activity.PhaseDone {
+		t.Fatalf("Phase = %q, want %q", latest.Phase, activity.PhaseDone)
+	}
+	if latest.SQL != "SELECT * FROM orders" {
+		t.Fatalf("SQL = %q, want the statement that ran", latest.SQL)
+	}
+	// The row counter is what makes "reading rows" informative.
+	if latest.RowsRead != 3 {
+		t.Errorf("RowsRead = %d, want 3", latest.RowsRead)
+	}
+}
+
+func TestActivityRecordsFailuresWithTheDatabaseMessage(t *testing.T) {
+	svc, id := newTestService(t)
+	seed(t, svc, id, 1)
+
+	if _, err := svc.RunSQL(context.Background(), RunSQLRequest{
+		ConnectionID: id,
+		SQL:          "SELECT nope FROM orders",
+	}); err == nil {
+		t.Fatal("expected the bad column to error")
+	}
+
+	latest := svc.Activity().Queries[0]
+	if latest.Phase != activity.PhaseFailed || latest.Error == "" {
+		t.Fatalf("got %+v, want a failed entry carrying the database's message", latest)
+	}
+}
+
+// Catalogue reads are visible while they run but must not fill the log.
+func TestActivityDropsIntrospectionFromTheHistory(t *testing.T) {
+	svc, id := newTestService(t)
+	seed(t, svc, id, 1)
+	svc.ClearQueryHistory()
+
+	if _, err := svc.ListObjects(context.Background(), id, ""); err != nil {
+		t.Fatalf("list objects: %v", err)
+	}
+	if got := svc.Activity().Queries; len(got) != 0 {
+		t.Fatalf("Activity() = %+v, want introspection left out of the log", got)
+	}
+}
+
+func TestClearQueryHistoryEmptiesTheLog(t *testing.T) {
+	svc, id := newTestService(t)
+	seed(t, svc, id, 1)
+	if len(svc.Activity().Queries) == 0 {
+		t.Fatal("seeding should have left history behind")
+	}
+
+	svc.ClearQueryHistory()
+	if got := svc.Activity().Queries; len(got) != 0 {
+		t.Fatalf("Activity() = %+v after clearing, want empty", got)
+	}
+}

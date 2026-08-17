@@ -148,12 +148,34 @@ export function buildCommands(s: Store): Command[] {
   })
 
   cmds.push({
+    id: 'tray:toggle',
+    title: s.trayOpen ? 'Hide the activity tray' : 'Show running queries',
+    subtitle: 'In-flight queries, with elapsed time and cancel',
+    group: 'Query',
+    shortcut: 'Ctrl+J',
+    candidate: {
+      name: 'Running queries',
+      keywords: 'activity tray monitor cancel kill progress loading elapsed',
+    },
+    run: () => s.setTrayOpen(!s.trayOpen),
+  })
+
+  cmds.push({
+    id: 'tray:clear',
+    title: 'Clear the query log',
+    subtitle: 'Drops finished queries from the tray; anything running stays',
+    group: 'Query',
+    candidate: { name: 'Clear query log', keywords: 'activity history tray reset empty' },
+    run: () => s.clearQueryHistory(),
+  })
+
+  cmds.push({
     id: 'view:activity',
-    title: 'Show running queries',
-    subtitle: 'Open connections and in-flight queries, with cancel',
+    title: 'Show open connections',
+    subtitle: 'Connection pools per database, with disconnect',
     group: 'Query',
     shortcut: 'Ctrl+Shift+A',
-    candidate: { name: 'Running queries', keywords: 'activity monitor cancel kill sessions processes' },
+    candidate: { name: 'Open connections', keywords: 'activity sessions processes pool disconnect' },
     run: () => s.setView('activity'),
   })
 

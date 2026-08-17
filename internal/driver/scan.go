@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/alexlaw/db-pro/internal/activity"
 )
 
 // HardRowCap bounds any single result set, including when the user has turned
@@ -46,6 +48,10 @@ type QueryOptions struct {
 	TextCap int
 }
 
+// rowReportInterval is how often the row counter shown in the activity tray is
+// updated while streaming.
+const rowReportInterval = 512
+
 // RunQuery executes a query and normalises the result into a JSON-safe
 // ResultSet.
 func RunQuery(ctx context.Context, db *sql.DB, query string, opts QueryOptions) (*ResultSet, error) {
@@ -55,11 +61,16 @@ func RunQuery(ctx context.Context, db *sql.DB, query string, opts QueryOptions) 
 	}
 	start := time.Now()
 
+	// Phase reporting for the activity tray. QueryContext covers both the wait
+	// for a pooled connection and the server's own work, so "executing" is
+	// exactly "we are waiting on the database"; everything after it is us.
+	activity.SetPhase(ctx, activity.PhaseExecuting)
 	rows, err := db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
+	activity.SetPhase(ctx, activity.PhaseReading)
 
 	colTypes, err := rows.ColumnTypes()
 	if err != nil {
@@ -107,10 +118,16 @@ func RunQuery(ctx context.Context, db *sql.DB, query string, opts QueryOptions) 
 			}
 		}
 		out.Rows = append(out.Rows, row)
+		// Reported in batches: the tray redraws a few times a second, so a
+		// context lookup per row would buy nothing.
+		if len(out.Rows)%rowReportInterval == 0 {
+			activity.AddRows(ctx, rowReportInterval)
+		}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
+	activity.AddRows(ctx, int64(len(out.Rows)%rowReportInterval))
 
 	out.ElapsedMS = time.Since(start).Milliseconds()
 	return out, nil
@@ -119,6 +136,8 @@ func RunQuery(ctx context.Context, db *sql.DB, query string, opts QueryOptions) 
 // Exec runs a statement that returns no rows and reports the affected count.
 func Exec(ctx context.Context, db *sql.DB, query string) (*ResultSet, error) {
 	start := time.Now()
+	// A statement that returns no rows has only the one phase worth showing.
+	activity.SetPhase(ctx, activity.PhaseExecuting)
 	res, err := db.ExecContext(ctx, query)
 	if err != nil {
 		return nil, err

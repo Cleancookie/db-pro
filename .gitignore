@@ -24,6 +24,9 @@ devserver.exe
 *.sqlite3
 /scratch/
 
+# Agent worktrees
+/.claude/
+
 # Editors / OS
 .DS_Store
 .idea/
