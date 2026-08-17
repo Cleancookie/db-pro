@@ -175,10 +175,24 @@ function QueryRow({
   const setDialog = useStore((s) => s.setDialog)
   const confirmDestructive = useStore((s) => s.settings.confirmDestructive)
   const connections = useStore((s) => s.connections)
+  const copyText = useStore((s) => s.copyText)
+  const pushToast = useStore((s) => s.pushToast)
 
   const name = connections.find((c) => c.id === query.connectionId)?.name ?? query.connectionId
   const running = isRunning(query)
   const elapsed = elapsedFor(query, polledAt, now)
+
+  // Go caps the SQL it retains per history entry, so for a very long statement
+  // this copies what was kept rather than the original. Saying so beats a
+  // silent partial copy.
+  const copySql = async () => {
+    await copyText(query.sql)
+    if (query.sql.endsWith('…')) {
+      pushToast('info', `Copied ${query.id}, trimmed to the length the log keeps`)
+    } else {
+      pushToast('info', `Copied the statement for ${query.id}`)
+    }
+  }
 
   const requestCancel = () => {
     if (confirmDestructive) setDialog({ kind: 'confirmCancel', queryId: query.id, sql: query.sql })
@@ -210,16 +224,23 @@ function QueryRow({
       >
         {name}
       </span>
-      {/* One line here: the tray is a glance. The full text is a hover away,
-          and the query itself is still in the editor. */}
-      <span
-        title={query.error ? `${query.sql}\n\n${query.error}` : query.sql}
-        className={`min-w-0 flex-1 truncate font-[var(--font-mono)] ${
+      {/* One line here: the tray is a glance, and rendering a megabyte
+          statement into a row nobody is reading would cost the scroll
+          performance the tray is meant to have. Clicking copies the whole
+          statement instead — the text is already in the snapshot, it is only
+          the *rendering* that is trimmed. */}
+      <button
+        onClick={() => void copySql()}
+        title={
+          (query.error ? `${query.sql}\n\n${query.error}\n\n` : `${query.sql}\n\n`) +
+          'Click to copy the statement'
+        }
+        className={`min-w-0 flex-1 truncate text-left font-[var(--font-mono)] hover:underline ${
           query.error ? 'text-[var(--color-danger)]' : ''
         }`}
       >
         {query.error ?? query.sql}
-      </span>
+      </button>
       {running ? (
         <IndeterminateBar
           className="h-[3px] w-14 shrink-0 rounded-full"

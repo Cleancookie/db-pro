@@ -3,6 +3,7 @@ import { describeConnection, formatCount, objectCandidate, OBJECT_ICON, qualifie
 import { rankCandidates } from '../fuzzy'
 import { useStore, type SectionKey } from '../store'
 import { ConnectionMenu } from './ConnectionMenu'
+import { SidebarResizer, useSidebarWidth } from './SidebarResizer'
 import type { ObjectType, SchemaObject } from '../types'
 
 const GROUP_ORDER: ObjectType[] = ['table', 'view', 'function', 'procedure']
@@ -50,8 +51,19 @@ export function Sidebar() {
     [databases, dbQuery],
   )
 
+  const resize = useSidebarWidth()
+
   return (
-    <aside className="chrome flex w-64 shrink-0 flex-col overflow-hidden border-r border-[var(--color-border)] bg-[var(--color-panel)]">
+    // The width is inline because it is dragged; `relative` anchors the resize
+    // handle to this element's right edge, which keeps it out of the layout and
+    // out of the indentation of everything below.
+    <aside
+      style={{ width: resize.width }}
+      className={`chrome relative flex shrink-0 flex-col overflow-hidden border-r border-[var(--color-border)] bg-[var(--color-panel)] ${
+        resize.dragging ? '' : 'transition-[width] duration-75'
+      }`}
+    >
+      <SidebarResizer {...resize} />
       <Section
         id="connections"
         label="Connections"

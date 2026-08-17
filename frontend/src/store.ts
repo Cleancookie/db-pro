@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { api, errorMessage } from './api'
 import { absoluteRowOffset, cellText, isCellTruncated } from './cells'
-import { mark } from './startup'
+import { mark, reportText } from './startup'
 import type {
   ActivityResult,
   Capabilities,
@@ -66,6 +66,7 @@ export const DEFAULT_SETTINGS: Settings = {
   showSystemObjects: false,
   autoCount: true,
   confirmDestructive: true,
+  sidebarWidthPx: 256,
 }
 
 interface State {
@@ -300,6 +301,12 @@ export const useStore = create<State>((set, get) => {
         })
         applyFontSize(settings.fontSizePx)
         mark('config loaded')
+        // Startup timing only exists in the webview — the boot and the bundle
+        // parse both happen before Go runs again — so it is sent back to be
+        // written to the log file, where it can be read after the fact.
+        void api.logClient(`startup ${reportText()}`).catch(() => {
+          // A failed log line is never worth a toast.
+        })
       } catch (e) {
         get().pushToast('error', errorMessage(e))
       }

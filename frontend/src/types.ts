@@ -132,6 +132,7 @@ export interface Settings {
   showSystemObjects: boolean
   autoCount: boolean
   confirmDestructive: boolean
+  sidebarWidthPx: number
 }
 
 export type QueryKind = 'browse' | 'count' | 'query' | 'introspect'

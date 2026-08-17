@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"io"
+	"log"
 	"path/filepath"
 
 	"github.com/alexlaw/db-pro/internal/activity"
@@ -17,12 +19,22 @@ import (
 type App struct {
 	ctx context.Context
 	svc *api.Service
+	// logFile is held only so it can be closed on shutdown.
+	logFile io.Closer
 }
 
 func NewApp() (*App, error) {
 	dir, err := config.DefaultDir()
 	if err != nil {
 		return nil, err
+	}
+	// Before anything else that might log. A Windows GUI binary has no stdout,
+	// so without this every log line is discarded and a slow launch cannot be
+	// diagnosed after the fact.
+	logFile, err := config.OpenLog(dir)
+	if err != nil {
+		// Not fatal: the app works fine, it just cannot be investigated later.
+		log.Printf("db-pro: continuing without a log file: %v", err)
 	}
 	store, err := config.Open(dir)
 	if err != nil {
@@ -32,12 +44,27 @@ func NewApp() (*App, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &App{svc: api.New(store, settings, engine.New(), activity.New())}, nil
+	return &App{
+		svc:     api.New(store, settings, engine.New(), activity.New()),
+		logFile: logFile,
+	}, nil
 }
+
+// LogClient records a line measured in the webview.
+//
+// Startup timing is only knowable from the frontend — the webview boot and the
+// bundle parse both happen before any Go code runs again — so the numbers have
+// to come back across the binding to reach the log file.
+func (a *App) LogClient(line string) { log.Printf("client: %s", line) }
 
 func (a *App) startup(ctx context.Context) { a.ctx = ctx }
 
-func (a *App) shutdown(context.Context) { a.svc.Shutdown() }
+func (a *App) shutdown(context.Context) {
+	a.svc.Shutdown()
+	if a.logFile != nil {
+		_ = a.logFile.Close()
+	}
+}
 
 func (a *App) Drivers() map[driver.Kind]driver.Capabilities { return a.svc.Drivers() }
 

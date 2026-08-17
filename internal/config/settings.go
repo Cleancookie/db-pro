@@ -32,6 +32,11 @@ type Settings struct {
 	AutoCount bool `json:"autoCount"`
 	// ConfirmDestructive asks before deleting a connection.
 	ConfirmDestructive bool `json:"confirmDestructive"`
+	// SidebarWidthPx is the sidebar's width, set by dragging its edge rather
+	// than from the settings dialog. In pixels, not rem: it is dragged against
+	// physical screen space, and scaling it with the font size would move an
+	// edge the user had put somewhere deliberately.
+	SidebarWidthPx int `json:"sidebarWidthPx"`
 }
 
 // DefaultSettings is also the fallback for any field missing from disk.
@@ -47,6 +52,7 @@ func DefaultSettings() Settings {
 		ShowSystemObjects:  false,
 		AutoCount:          true,
 		ConfirmDestructive: true,
+		SidebarWidthPx:     256,
 	}
 }
 
@@ -63,6 +69,11 @@ func (s Settings) clamp() Settings {
 	}
 	if s.RowCap < 1 || s.RowCap > 1_000_000 {
 		s.RowCap = d.RowCap
+	}
+	// The bounds match the drag limits in the UI. Below the lower one the tree
+	// is unusable; above the upper one the grid is.
+	if s.SidebarWidthPx < 180 || s.SidebarWidthPx > 560 {
+		s.SidebarWidthPx = d.SidebarWidthPx
 	}
 	// 0 is meaningful here — it means "do not cap" — so only a negative or
 	// absurd value falls back.

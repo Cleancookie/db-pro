@@ -147,6 +147,9 @@ export const api = {
   cancelQuery: (id: string) => call<void>('CancelQuery', [id], { id }),
 
   clearQueryHistory: () => call<void>('ClearQueryHistory', [], {}),
+
+  /** Sends a line to the Go log file, which is the only place it persists. */
+  logClient: (line: string) => call<void>('LogClient', [line], { line }),
 }
 
 export function errorMessage(e: unknown): string {
