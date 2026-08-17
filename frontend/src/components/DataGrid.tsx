@@ -1,9 +1,10 @@
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { isTypingTarget } from '../dom'
-import { useStore } from '../store'
+import { inRect, rectOf, type CellPos, type Rect } from '../selection'
+import { useStore, type ResultSource } from '../store'
 import { ContextMenu, type MenuItem } from '../ui'
-import type { Cell, Column, ResultSet, Sort } from '../types'
+import type { Cell, Column, ResultColumn, ResultSet, Sort } from '../types'
 
 const WIDTH_SAMPLE_ROWS = 120
 
@@ -13,7 +14,9 @@ const WIDTH_SAMPLE_ROWS = 120
  * would leave larger text clipped inside unchanged row heights.
  */
 function metrics(rootPx: number) {
-  const cellPx = rootPx * 0.75 // the grid renders at 0.75rem
+  // The grid renders at the root size like everything else, so a character is
+  // measured against that and not against a per-component size. See index.css.
+  const cellPx = rootPx
   return {
     rowHeight: Math.round(rootPx * 1.625),
     headerHeight: Math.round(rootPx * 1.875),
@@ -30,6 +33,8 @@ function metrics(rootPx: number) {
 
 interface Props {
   result: ResultSet
+  /** Which result this is, so the selection in the store knows whose it is. */
+  source: ResultSource
   /** Introspected column metadata; absent when running ad-hoc SQL. */
   columns?: Column[]
   orderBy?: Sort[]
@@ -49,9 +54,14 @@ interface Props {
 /**
  * Virtualised result grid. Only the visible rows are in the DOM, so a 100k-row
  * result with pagination off stays responsive.
+ *
+ * Cells are selectable as a range: click one, shift-click another, or hold shift
+ * with the arrow keys. What Ctrl+C then produces is decided by the shape of the
+ * range and by nothing else — see frontend/src/selection.ts.
  */
 export function DataGrid({
   result,
+  source,
   columns,
   orderBy,
   onSort,
@@ -60,12 +70,27 @@ export function DataGrid({
   cellMenu,
 }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null)
-  // The selected cell's own element, so the keyboard menu key can open the
+  // The focused cell's own element, so the keyboard menu key can open the
   // context menu where the cell is rather than at the pointer's last position.
   const selectedRef = useRef<HTMLDivElement | null>(null)
-  const [selected, setSelected] = useState<{ row: number; col: number } | null>(null)
   const rootPx = useStore((s) => s.settings.fontSizePx)
+  const transposed = useStore((s) => s.transposed)
   const gm = useMemo(() => metrics(rootPx), [rootPx])
+
+  // Only this grid's own selection: the other result keeps its own, so
+  // switching between the browser and the editor does not lose either.
+  const selection = useStore((s) => (s.selection?.source === source ? s.selection : null))
+  const selectCell = useStore((s) => s.selectCell)
+  const extendSelection = useStore((s) => s.extendSelection)
+  const clearSelection = useStore((s) => s.clearSelection)
+  const focus = selection?.focus ?? null
+  const rect = useMemo(() => (selection ? rectOf(selection) : null), [selection])
+
+  /** A click (or a shift-click, which extends instead of starting over). */
+  const pick = (row: number, col: number, extend: boolean) => {
+    if (extend) extendSelection(source, { row, col })
+    else selectCell(source, { row, col })
+  }
 
   const meta = useMemo(() => {
     const byName = new Map((columns ?? []).map((c) => [c.name, c]))
@@ -112,18 +137,31 @@ export function DataGrid({
     virtualizer.measure()
   }, [gm.rowHeight, virtualizer])
 
-  // A new result set should start at the top, not wherever the last one was.
+  // A new result set should start at the top, not wherever the last one was,
+  // and a selection into rows that are no longer there means nothing.
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: 0 })
-    setSelected(null)
-  }, [result])
+    clearSelection()
+  }, [result, clearSelection])
 
-  // Ctrl+C copies the selected cell, Enter opens it. Copying what you are
+  // Keeps the focused cell on screen when it moved by keyboard. The row
+  // virtualiser has to be told, since the target row may not be rendered at all;
+  // the horizontal axis is plain layout here, so the element handles itself once
+  // it exists.
+  useEffect(() => {
+    if (!focus || transposed) return
+    virtualizer.scrollToIndex(focus.row, { align: 'auto' })
+    selectedRef.current?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  }, [focus, transposed, virtualizer])
+
+  // Ctrl+C copies the selection, Enter opens the focused cell, and the arrows
+  // move — with shift held, they extend the range instead. Copying what you are
   // looking at is the single most common thing done with a result grid; opening
-  // it is how a capped value, or a JSON document, is read at all.
+  // a cell is how a capped value, or a JSON document, is read at all.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!selected) return
+      const s = useStore.getState()
+      const sel = s.selection?.source === source ? s.selection : null
       // A cell stays selected while the user types in the filter box, where
       // Enter means "apply" and Ctrl+C means "copy what I selected in here".
       const target = e.target as HTMLElement | null
@@ -132,14 +170,43 @@ export function DataGrid({
       // there means "activate the highlighted item", and handling it here as
       // well would run the menu's action and open the viewer on top of it.
       if (target?.closest('[role="menu"],[role="dialog"]')) return
-      if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && onOpenCell) {
+      const mod = e.ctrlKey || e.metaKey
+
+      // Select-all is worth having on a grid whose whole result is often what
+      // you want, and there is no competing meaning outside a text field. Shift
+      // must be excluded: Ctrl+Shift+A opens the connections page.
+      if (mod && !e.shiftKey && e.key.toLowerCase() === 'a') {
         e.preventDefault()
-        onOpenCell(selected.row, selected.col)
+        s.selectAll(source)
+        return
+      }
+
+      if (!sel) return
+      const cur = sel.focus
+
+      // Arrow movement, mapped through the orientation: down is the next row
+      // when rows run across, and the next column when they run down.
+      const step = ARROWS[e.key]
+      if (step && !mod) {
+        const d = transposed ? { row: step.col, col: step.row } : step
+        const pos = {
+          row: clamp(cur.row + d.row, 0, result.rows.length - 1),
+          col: clamp(cur.col + d.col, 0, result.columns.length - 1),
+        }
+        e.preventDefault()
+        if (e.shiftKey) s.extendSelection(source, pos)
+        else s.selectCell(source, pos)
+        return
+      }
+
+      if (e.key === 'Enter' && !mod && onOpenCell) {
+        e.preventDefault()
+        onOpenCell(cur.row, cur.col)
         return
       }
       // The platform menu key, and its laptop-keyboard equivalent. Radix opens
       // the menu from a contextmenu event, so the cheapest way to honour the
-      // key is to raise one at the selected cell — which also puts the menu
+      // key is to raise one at the focused cell — which also puts the menu
       // where the cell is rather than wherever the pointer was left.
       if ((e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) && cellMenu) {
         const el = selectedRef.current
@@ -155,16 +222,14 @@ export function DataGrid({
         )
         return
       }
-      if (!(e.ctrlKey || e.metaKey) || e.key !== 'c') return
+      if (!mod || e.key !== 'c') return
       if (window.getSelection()?.toString()) return // let a text selection win
-      const value = result.rows[selected.row]?.[selected.col]
-      if (value === undefined) return
       e.preventDefault()
-      void navigator.clipboard?.writeText(value === null ? '' : String(value))
+      void s.copySelection()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [selected, result, onOpenCell, cellMenu])
+  }, [source, transposed, result, onOpenCell, cellMenu])
 
   if (result.columns.length === 0) {
     return (
@@ -185,13 +250,35 @@ export function DataGrid({
   // it. The placeholder is all but unreachable for the same reason.
   const menuItems: MenuItem[] | null = !cellMenu
     ? null
-    : selected
-      ? cellMenu(selected.row, selected.col)
+    : focus
+      ? cellMenu(focus.row, focus.col)
       : [{ label: 'No cell selected', onSelect: () => {}, disabled: true }]
-  const menuHeading = selected ? meta[selected.col]?.name : undefined
+  const menuHeading = focus ? meta[focus.col]?.name : undefined
+
+  // Transposing swaps the axes only: the selection, the keyboard, the menu and
+  // the cut-cell markers above all address the *source* row and column, so they
+  // are unchanged by which way round the data is drawn.
+  if (transposed) {
+    return (
+      <RecordsGrid
+        result={result}
+        meta={meta}
+        cutCells={cutCells}
+        gm={gm}
+        rowOffset={rowOffset}
+        focus={focus}
+        rect={rect}
+        pick={pick}
+        selectedRef={selectedRef}
+        onOpenCell={onOpenCell}
+        menuItems={menuItems}
+        menuHeading={menuHeading}
+      />
+    )
+  }
 
   return (
-    <div ref={scrollRef} className="h-full overflow-auto font-[var(--font-mono)] text-[0.75rem]">
+    <div ref={scrollRef} className="h-full overflow-auto font-[var(--font-mono)]">
       <div style={{ width: totalWidth, minWidth: '100%' }}>
         <div
           className="chrome sticky top-0 z-10 flex border-b border-[var(--color-border-strong)] bg-[var(--color-panel)]"
@@ -222,7 +309,7 @@ export function DataGrid({
                   // wildly across the platforms this ships to, and a tofu box
                   // next to a column name reads as corruption.
                   <span
-                    className="shrink-0 rounded-sm bg-[var(--color-warn)]/20 px-1 text-[0.5625rem] font-semibold text-[var(--color-warn)]"
+                    className="shrink-0 rounded-sm bg-[var(--color-warn)]/20 px-1 font-semibold text-[var(--color-warn)]"
                     title="primary key"
                   >
                     PK
@@ -265,65 +352,279 @@ export function DataGrid({
                   }}
                 >
                   <div
-                    className="chrome flex shrink-0 items-center justify-end border-r border-[var(--color-border)] pr-2 text-[0.6875rem] text-[var(--color-faint)] select-none"
+                    className="chrome flex shrink-0 items-center justify-end border-r border-[var(--color-border)] pr-2 text-[var(--color-faint)] select-none"
                     style={{ width: gm.gutter }}
                   >
                     {rowOffset + v.index + 1}
                   </div>
                   {meta.map((m, ci) => {
-                    const isSelected = selected?.row === v.index && selected.col === ci
+                    const isFocus = focus?.row === v.index && focus.col === ci
+                    const inRange = rect ? inRect(rect, v.index, ci) : false
                     const value = row[ci]
                     const cut = cutCells.has(`${v.index}:${ci}`)
                     return (
                       <div
                         key={ci}
-                        ref={isSelected ? selectedRef : undefined}
-                        onMouseDown={() => setSelected({ row: v.index, col: ci })}
+                        ref={isFocus ? selectedRef : undefined}
+                        onMouseDown={(e) => pick(v.index, ci, e.shiftKey)}
                         // mousedown already fires for the right button, but a
                         // ctrl-click on macOS arrives as a contextmenu without
                         // one. The menu must always act on the cell that was
                         // actually clicked, never on a stale selection.
-                        onContextMenu={() => setSelected({ row: v.index, col: ci })}
+                        onContextMenu={() => pick(v.index, ci, false)}
                         onDoubleClick={() => onOpenCell?.(v.index, ci)}
                         className={`shrink-0 truncate border-r border-[var(--color-border)] px-2 ${
                           m.numeric ? 'text-right' : ''
-                        } ${isSelected ? 'bg-[var(--color-accent-dim)]/60 ring-1 ring-[var(--color-accent)] ring-inset' : ''}`}
+                        } ${cellSelectionClass(isFocus, inRange)}`}
                         style={{ width: widths[ci], lineHeight: `${gm.rowHeight}px` }}
-                        title={
-                          value === null
-                            ? 'NULL'
-                            : cut
-                              ? `${String(value)}\n\n(cut to ${result.textCap} characters — Enter for the whole value)`
-                              : String(value)
-                        }
+                        title={cellTitle(value, cut, result.textCap)}
                       >
-                        {value === null ? (
-                          // NULL and '' must never look the same — telling them
-                          // apart is half of why people open a GUI at all.
-                          <span className="text-[var(--color-faint)] italic">NULL</span>
-                        ) : value === '' ? (
-                          <span className="text-[var(--color-faint)] italic">empty</span>
-                        ) : typeof value === 'boolean' ? (
-                          <span className="text-[var(--color-warn)]">{String(value)}</span>
-                        ) : cut ? (
-                          // Truncation must be visible in the cell, not only in
-                          // the tooltip: a value that was cut but looks whole is
-                          // worse than no value at all. The badge is pinned to
-                          // the right of the cell and the text truncates before
-                          // it, or the marker would be the first thing scrolled
-                          // out of sight — capped values always overflow.
-                          <span className="flex min-w-0 items-center gap-1">
-                            <span className="truncate">{String(value)}</span>
-                            <span className="shrink-0 rounded-sm bg-[var(--color-warn)]/20 px-1 text-[0.5625rem] font-semibold text-[var(--color-warn)]">
-                              CUT
-                            </span>
-                          </span>
-                        ) : (
-                          String(value)
-                        )}
+                        <CellBody value={value} cut={cut} />
                       </div>
                     )
                   })}
+                </div>
+              )
+            })}
+          </div>
+        </CellContextMenu>
+      </div>
+    </div>
+  )
+}
+
+/** Arrow keys as a step in display coordinates. */
+const ARROWS: Record<string, { row: number; col: number }> = {
+  ArrowUp: { row: -1, col: 0 },
+  ArrowDown: { row: 1, col: 0 },
+  ArrowLeft: { row: 0, col: -1 },
+  ArrowRight: { row: 0, col: 1 },
+}
+
+function clamp(n: number, lo: number, hi: number): number {
+  return Math.max(lo, Math.min(hi, n))
+}
+
+/**
+ * How a cell shows that it is selected.
+ *
+ * The focus cell keeps the ring it always had, and the rest of the range is a
+ * flatter wash: one cell has to stay identifiable as the one the keyboard and
+ * the menu are pointing at, or extending a range becomes guesswork.
+ */
+function cellSelectionClass(isFocus: boolean, inRange: boolean): string {
+  if (isFocus) {
+    return 'bg-[var(--color-accent-dim)]/60 ring-1 ring-[var(--color-accent)] ring-inset'
+  }
+  return inRange ? 'bg-[var(--color-accent-dim)]/30' : ''
+}
+
+/** One source column, with its introspected metadata where there is any. */
+interface ColMeta extends ResultColumn {
+  column?: Column
+  numeric: boolean
+}
+
+type Metrics = ReturnType<typeof metrics>
+
+interface RecordsProps {
+  result: ResultSet
+  meta: ColMeta[]
+  cutCells: Set<string>
+  gm: Metrics
+  rowOffset: number
+  focus: CellPos | null
+  rect: Rect | null
+  pick: (row: number, col: number, extend: boolean) => void
+  selectedRef: React.MutableRefObject<HTMLDivElement | null>
+  onOpenCell?: (rowIndex: number, colIndex: number) => void
+  menuItems: MenuItem[] | null
+  menuHeading?: string
+}
+
+/**
+ * The transposed grid: column names down the left, one record per column.
+ *
+ * This is the shape for reading one wide row — forty columns of a customer are
+ * a column you can scan, not a horizontal scroll. It is a *view* of the same
+ * result: no query is re-run, and a cell here is the same cell as in the row
+ * orientation, so copy, open, and the right-click menu all behave identically.
+ *
+ * Both axes are virtualised, because both can be long: a result is transposed
+ * without first being narrowed, and 5k records across is as ordinary here as
+ * 5k rows down is in the other orientation. Records are given one uniform
+ * width, sampled across the whole grid rather than per record — a matrix whose
+ * columns are all different widths is much harder to read down.
+ */
+function RecordsGrid({
+  result,
+  meta,
+  cutCells,
+  gm,
+  rowOffset,
+  focus,
+  rect,
+  pick,
+  selectedRef,
+  onOpenCell,
+  menuItems,
+  menuHeading,
+}: RecordsProps) {
+  const scrollRef = useRef<HTMLDivElement>(null)
+
+  // The left column has to fit the longest column *name*, since that is what it
+  // holds; the data columns are sized from the values, sampled like the other
+  // orientation does.
+  const labelWidth = useMemo(() => {
+    let longest = 0
+    for (const m of meta) {
+      const len = m.name.length + (m.column?.primaryKey ? 3 : 0)
+      if (len > longest) longest = len
+    }
+    return Math.round(Math.min(gm.maxCol, Math.max(gm.gutter, longest * gm.charPx + gm.padPx)))
+  }, [meta, gm])
+
+  const cellWidth = useMemo(() => {
+    let longest = 0
+    for (const row of result.rows.slice(0, WIDTH_SAMPLE_ROWS)) {
+      for (const v of row) {
+        const len = displayValue(v).length
+        if (len > longest) longest = len
+      }
+    }
+    return Math.round(Math.min(gm.maxCol, Math.max(gm.minCol, longest * gm.charPx + gm.padPx)))
+  }, [result.rows, gm])
+
+  const rowV = useVirtualizer({
+    count: meta.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => gm.rowHeight,
+    overscan: 12,
+  })
+
+  const colV = useVirtualizer({
+    horizontal: true,
+    count: result.rows.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => cellWidth,
+    overscan: 4,
+  })
+
+  // Both measurements are derived from the font size and the values, so a
+  // Settings change or a new result has to remeasure or the old geometry sticks.
+  useEffect(() => {
+    rowV.measure()
+    colV.measure()
+  }, [gm.rowHeight, cellWidth, rowV, colV])
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: 0, left: 0 })
+  }, [result])
+
+  // Both axes are virtualised here, so both have to be told where the focus
+  // went: the row is a source column, the column is a source row.
+  useEffect(() => {
+    if (!focus) return
+    rowV.scrollToIndex(focus.col, { align: 'auto' })
+    colV.scrollToIndex(focus.row, { align: 'auto' })
+  }, [focus, rowV, colV])
+
+  const cols = colV.getVirtualItems()
+  const totalWidth = labelWidth + colV.getTotalSize()
+
+  return (
+    <div ref={scrollRef} className="h-full overflow-auto font-[var(--font-mono)]">
+      <div style={{ width: totalWidth, minWidth: '100%' }}>
+        {/* The record numbers. Sticky on both axes, so the number of the record
+            you are reading stays put whichever way you scroll. */}
+        <div
+          className="chrome sticky top-0 z-20 flex border-b border-[var(--color-border-strong)] bg-[var(--color-panel)]"
+          style={{ height: gm.headerHeight, width: totalWidth }}
+        >
+          <div
+            className="sticky left-0 z-10 shrink-0 border-r border-[var(--color-border)] bg-[var(--color-panel)] px-2 text-[var(--color-faint)]"
+            style={{ width: labelWidth, lineHeight: `${gm.headerHeight}px` }}
+          >
+            column
+          </div>
+          <div className="relative" style={{ width: colV.getTotalSize() }}>
+            {cols.map((c) => (
+              <div
+                key={c.key}
+                className="absolute top-0 truncate border-r border-[var(--color-border)] px-2 text-right text-[var(--color-faint)]"
+                style={{
+                  left: c.start,
+                  width: c.size,
+                  height: gm.headerHeight,
+                  lineHeight: `${gm.headerHeight}px`,
+                }}
+              >
+                {rowOffset + c.index + 1}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <CellContextMenu items={menuItems} heading={menuHeading}>
+          <div style={{ height: rowV.getTotalSize(), position: 'relative' }}>
+            {rowV.getVirtualItems().map((v) => {
+              const m = meta[v.index]
+              return (
+                <div
+                  key={v.key}
+                  className={`absolute flex ${v.index % 2 === 1 ? 'bg-white/[0.015]' : ''}`}
+                  style={{ top: v.start, height: v.size, left: 0, width: totalWidth }}
+                >
+                  {/* The name of the column this record's value belongs to.
+                      Sticky left for the same reason the header is sticky top:
+                      scrolled away, a value is unlabelled. */}
+                  <div
+                    className="chrome sticky left-0 z-10 flex shrink-0 items-center gap-1 truncate border-r border-[var(--color-border)] bg-[var(--color-panel)] px-2 select-none"
+                    style={{ width: labelWidth }}
+                    title={`${m.name}${m.column ? ` · ${m.column.dataType}` : ''}${
+                      m.column?.primaryKey ? ' · primary key' : ''
+                    }`}
+                  >
+                    {m.column?.primaryKey && (
+                      <span
+                        className="shrink-0 rounded-sm bg-[var(--color-warn)]/20 px-1 font-semibold text-[var(--color-warn)]"
+                        title="primary key"
+                      >
+                        PK
+                      </span>
+                    )}
+                    <span className="truncate">{m.name}</span>
+                  </div>
+                  <div className="relative" style={{ width: colV.getTotalSize() }}>
+                    {cols.map((c) => {
+                      const value = result.rows[c.index]?.[v.index]
+                      if (value === undefined) return null
+                      const isFocus = focus?.row === c.index && focus.col === v.index
+                      const inRange = rect ? inRect(rect, c.index, v.index) : false
+                      const cut = cutCells.has(`${c.index}:${v.index}`)
+                      return (
+                        <div
+                          key={c.key}
+                          ref={isFocus ? selectedRef : undefined}
+                          onMouseDown={(e) => pick(c.index, v.index, e.shiftKey)}
+                          onContextMenu={() => pick(c.index, v.index, false)}
+                          onDoubleClick={() => onOpenCell?.(c.index, v.index)}
+                          className={`absolute top-0 truncate border-r border-b border-[var(--color-border)] px-2 hover:bg-[var(--color-accent-dim)]/15 ${
+                            m.numeric ? 'text-right' : ''
+                          } ${cellSelectionClass(isFocus, inRange)}`}
+                          style={{
+                            left: c.start,
+                            width: c.size,
+                            height: v.size,
+                            lineHeight: `${gm.rowHeight}px`,
+                          }}
+                          title={cellTitle(value, cut, result.textCap)}
+                        >
+                          <CellBody value={value} cut={cut} />
+                        </div>
+                      )
+                    })}
+                  </div>
                 </div>
               )
             })}
@@ -355,6 +656,41 @@ function CellContextMenu({
       {children}
     </ContextMenu>
   )
+}
+
+/**
+ * One cell's contents, in either orientation.
+ *
+ * NULL and '' must never look the same — telling them apart is half of why
+ * people open a GUI at all. Truncation is shown in the cell rather than only in
+ * the tooltip: a value that was cut but looks whole is worse than no value. The
+ * CUT badge is pinned right and the text truncates before it, or the marker
+ * would be the first thing scrolled out of sight, since capped values always
+ * overflow.
+ */
+function CellBody({ value, cut }: { value: Cell; cut: boolean }) {
+  if (value === null) return <span className="text-[var(--color-faint)] italic">NULL</span>
+  if (value === '') return <span className="text-[var(--color-faint)] italic">empty</span>
+  if (typeof value === 'boolean')
+    return <span className="text-[var(--color-warn)]">{String(value)}</span>
+  if (cut) {
+    return (
+      <span className="flex min-w-0 items-center gap-1">
+        <span className="truncate">{String(value)}</span>
+        <span className="shrink-0 rounded-sm bg-[var(--color-warn)]/20 px-1 font-semibold text-[var(--color-warn)]">
+          CUT
+        </span>
+      </span>
+    )
+  }
+  return <>{String(value)}</>
+}
+
+/** The tooltip for one cell, shared by both orientations. */
+function cellTitle(value: Cell, cut: boolean, textCap: number): string {
+  if (value === null) return 'NULL'
+  if (cut) return `${String(value)}\n\n(cut to ${textCap} characters — Enter for the whole value)`
+  return String(value)
 }
 
 function displayValue(v: Cell): string {

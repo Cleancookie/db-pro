@@ -10,6 +10,7 @@
 import type { Candidate } from './fuzzy'
 import { reportText } from './startup'
 import { objectBias, orderByRecency, refKey } from './recency'
+import { rectOf, rectSize } from './selection'
 import { PAGE_SIZES, type useStore } from './store'
 import type { ObjectType, SchemaObject } from './types'
 
@@ -219,6 +220,42 @@ export function buildActionCommands(s: Store): Command[] {
     shortcut: 'Ctrl+Shift+A',
     candidate: { name: 'Open connections', keywords: 'activity sessions processes pool disconnect' },
     run: () => s.setView('activity'),
+  })
+
+  if (s.selection) {
+    const size = rectSize(rectOf(s.selection))
+    cmds.push({
+      id: 'grid:copy',
+      title:
+        size.cells === 1
+          ? 'Copy the selected cell'
+          : size.cols === 1
+            ? `Copy ${size.rows} values as an IN list`
+            : `Copy ${size.cells} cells as CSV`,
+      subtitle: 'One cell is its value, one column is an IN list, wider is CSV',
+      group: 'Query',
+      shortcut: 'Ctrl+C',
+      candidate: {
+        name: 'Copy the selection',
+        keywords: 'copy clipboard cells range in list csv values ids paste',
+      },
+      run: () => s.copySelection(),
+    })
+  }
+
+  cmds.push({
+    id: 'grid:transpose',
+    title: s.transposed ? 'Show rows across' : 'Transpose the grid',
+    subtitle: s.transposed
+      ? 'Back to one row per line'
+      : 'Column names down the side, one record per column',
+    group: 'Query',
+    shortcut: 'Tab',
+    candidate: {
+      name: s.transposed ? 'Show rows across' : 'Transpose the grid',
+      keywords: 'transpose flip rotate swap axes pivot sideways vertical record card',
+    },
+    run: () => s.toggleTransposed(),
   })
 
   if (s.activeRef) {

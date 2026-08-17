@@ -61,6 +61,7 @@ export function App() {
                 {result ? (
                   <DataGrid
                     result={result}
+                    source="browse"
                     columns={columns}
                     orderBy={orderBy}
                     onSort={(c) => void toggleSort(c)}
@@ -246,6 +247,16 @@ function useGlobalHotkeys() {
         return
       }
 
+      // Tab flips the grid's axes. Claimed only when a grid is actually on
+      // screen and the caret is not in a field, so Tab keeps meaning "next
+      // control" everywhere else — and Shift+Tab is left alone entirely, so
+      // there is always a way to traverse focus backwards out of the grid.
+      if (!typing && !mod && !e.shiftKey && e.key === 'Tab' && gridOnScreen(s)) {
+        e.preventDefault()
+        s.toggleTransposed()
+        return
+      }
+
       // Bare "/" jumps to the filter, as in vim and every pager.
       if (!typing && !mod && e.key === '/') {
         e.preventDefault()
@@ -256,4 +267,11 @@ function useGlobalHotkeys() {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [])
+}
+
+/** Whether a result grid is the thing the user is looking at. */
+function gridOnScreen(s: ReturnType<typeof useStore.getState>): boolean {
+  if (s.view === 'data') return s.result !== null && s.activeRef !== null
+  if (s.view === 'sql') return s.sqlResult !== null
+  return false
 }

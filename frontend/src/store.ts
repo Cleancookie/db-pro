@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { api, errorMessage } from './api'
 import { absoluteRowOffset, cellText, isCellTruncated } from './cells'
 import { RECENT_LIMIT, refKey } from './recency'
+import { describeCopy, rectOf, selectionText, type CellPos, type Selection } from './selection'
 import { mark, reportText } from './startup'
 import type {
   ActivityResult,
@@ -132,8 +133,23 @@ interface State {
   detailLoading: boolean
   detailError: string | null
 
+  /**
+   * The selected cell range, and which grid it belongs to.
+   *
+   * In the store rather than in DataGrid because the selection is something the
+   * rest of the app acts on — the palette copies it, the cell menu reads it —
+   * and because it must survive the grid remounting when the axes are flipped.
+   * Always in *source* row/column coordinates, whichever way round the grid is
+   * drawn.
+   */
+  selection: (Selection & { source: ResultSource }) | null
+
   // ui
   view: View
+  /** Grid orientation: false is rows across, true is one record per column.
+   *  Shared by the browser and the editor's result — Tab means the same thing
+   *  wherever a grid is on screen. */
+  transposed: boolean
   collapsed: Record<SectionKey, boolean>
   settings: Settings
   activity: ActivityResult
@@ -166,6 +182,19 @@ interface State {
   toggleSort: (column: string) => Promise<void>
   clearSort: () => Promise<void>
   setView: (v: View) => void
+  toggleTransposed: () => void
+  /** Starts a new selection at one cell — a plain click, or an arrow key. */
+  selectCell: (source: ResultSource, pos: CellPos) => void
+  /** Moves the focus corner, keeping the anchor — shift-click, or shift+arrow. */
+  extendSelection: (source: ResultSource, pos: CellPos) => void
+  /** Selects the whole result. */
+  selectAll: (source: ResultSource) => void
+  clearSelection: () => void
+  /**
+   * Copies the selection: the value for one cell, an `IN (…)` list for one
+   * column, CSV for anything wider. See frontend/src/selection.ts.
+   */
+  copySelection: () => Promise<void>
   /**
    * Loads the details of a table or view and shows the details page.
    *
@@ -313,7 +342,9 @@ export const useStore = create<State>((set, get) => {
     detail: null,
     detailLoading: false,
     detailError: null,
+    selection: null,
     view: 'data',
+    transposed: false,
     collapsed: { connections: false, databases: false, objects: false },
     settings: DEFAULT_SETTINGS,
     activity: { queries: [], sessions: [] },
@@ -520,6 +551,77 @@ export const useStore = create<State>((set, get) => {
       // Entering the activity page should show current data immediately
       // rather than after the first poll tick.
       if (view === 'activity') void get().refreshActivity()
+    },
+
+    toggleTransposed() {
+      set({ transposed: !get().transposed })
+    },
+
+    selectCell(source, pos) {
+      set({ selection: { source, anchor: pos, focus: pos } })
+    },
+
+    extendSelection(source, pos) {
+      const cur = get().selection
+      // Shift-clicking with nothing selected, or in the other grid, has no
+      // anchor to extend from, so it starts one where the user clicked.
+      if (!cur || cur.source !== source) {
+        set({ selection: { source, anchor: pos, focus: pos } })
+        return
+      }
+      set({ selection: { ...cur, focus: pos } })
+    },
+
+    selectAll(source) {
+      const rs = source === 'sql' ? get().sqlResult : get().result
+      if (!rs || rs.rows.length === 0 || rs.columns.length === 0) return
+      set({
+        selection: {
+          source,
+          anchor: { row: 0, col: 0 },
+          focus: { row: rs.rows.length - 1, col: rs.columns.length - 1 },
+        },
+      })
+    },
+
+    clearSelection() {
+      set({ selection: null })
+    },
+
+    async copySelection() {
+      const s = get()
+      const sel = s.selection
+      if (!sel) return
+      const rs = sel.source === 'sql' ? s.sqlResult : s.result
+      if (!rs) return
+
+      // Clamped, because a result can be replaced under a selection — a smaller
+      // page, or a filter that returned fewer rows.
+      const r = rectOf(sel)
+      const top = Math.max(0, r.top)
+      const left = Math.max(0, r.left)
+      const bottom = Math.min(rs.rows.length - 1, r.bottom)
+      const right = Math.min(rs.columns.length - 1, r.right)
+      if (bottom < top || right < left) return
+
+      const columns = rs.columns.slice(left, right + 1).map((c) => c.name)
+      const rows = rs.rows.slice(top, bottom + 1).map((row) => row.slice(left, right + 1))
+
+      await s.copyText(selectionText(columns, rows))
+
+      // A capped value copied into an IN list is silently the wrong value, so
+      // say so. The count matters more than which cells: the fix is the same
+      // either way, open them and copy in full.
+      let cut = 0
+      for (const c of rs.truncatedCells ?? []) {
+        if (c.row >= top && c.row <= bottom && c.col >= left && c.col <= right) cut++
+      }
+      const what = describeCopy(columns, rows)
+      if (cut > 0) {
+        s.pushToast('error', `${what} — ${cut} were cut to ${rs.textCap} characters and are partial`)
+      } else {
+        s.pushToast('info', what)
+      }
     },
 
     toggleSection(k) {

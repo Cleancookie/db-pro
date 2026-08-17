@@ -90,6 +90,7 @@ export function SqlEditor() {
         {sqlResult ? (
           <DataGrid
             result={sqlResult}
+            source="sql"
             onOpenCell={(r, c) => openCell('sql', r, c)}
             cellMenu={cellMenu}
           />

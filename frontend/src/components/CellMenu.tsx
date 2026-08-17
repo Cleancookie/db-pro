@@ -1,3 +1,4 @@
+import { rectOf, rectSize } from '../selection'
 import { useStore, type ResultSource } from '../store'
 import type { MenuItem } from '../ui'
 
@@ -17,10 +18,29 @@ export function useCellMenu(source: ResultSource): (rowIndex: number, colIndex: 
   const openCell = useStore((s) => s.openCell)
   const copyCell = useStore((s) => s.copyCell)
   const copyText = useStore((s) => s.copyText)
+  const copySelection = useStore((s) => s.copySelection)
+  const selection = useStore((s) => (s.selection?.source === source ? s.selection : null))
 
   return (rowIndex, colIndex) => {
     const cell = cellTarget(source, rowIndex, colIndex)
     if (!cell) return []
+
+    // Only offered once the selection is more than the cell that was clicked,
+    // where "copy value" already says it better.
+    const range = selection ? rectSize(rectOf(selection)) : null
+    const rangeItem: MenuItem[] =
+      range && range.cells > 1
+        ? [
+            {
+              label:
+                range.cols === 1
+                  ? `Copy ${range.rows} values as an IN list`
+                  : `Copy ${range.cells} cells as CSV`,
+              separatorBefore: true,
+              onSelect: () => void copySelection(),
+            },
+          ]
+        : []
 
     // Worth fetching only when the grid is holding a shortened value and there
     // is a table to re-read it from; an ad-hoc SQL result has neither.
@@ -43,6 +63,7 @@ export function useCellMenu(source: ResultSource): (rowIndex: number, colIndex: 
         disabled: !canFetchFull,
         onSelect: () => void copyCell(source, rowIndex, colIndex, true),
       },
+      ...rangeItem,
       {
         label: 'Copy column name',
         separatorBefore: true,
