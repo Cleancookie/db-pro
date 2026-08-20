@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { buildActionCommands, buildNavigationCommands, type Command } from '../commands'
 import { rankCandidates, type Scored } from '../fuzzy'
 import { useStore } from '../store'
+import { Highlight } from './Highlight'
 
 /**
  * The palettes. Rebuilt from live state each time one opens, so what is offered
@@ -147,7 +148,8 @@ export function CommandPalette() {
           </kbd>
         </div>
 
-        <div ref={listRef} className="max-h-[52vh] overflow-y-auto p-2">
+        <div ref={listRef} className="max-h-[52vh] overflow-y-auto">
+          <Highlight className="p-2">
           {results.length === 0 && (
             <div className="px-4 py-6 text-center text-[var(--color-faint)]">
               {mode === 'go'
@@ -168,10 +170,9 @@ export function CommandPalette() {
                   data-index={i}
                   onMouseMove={() => setSelected(i)}
                   onClick={() => run(item)}
-                  className={`flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left ${
-                    i === selected
-                      ? 'bg-[var(--color-accent-dim)]/60 shadow-xs'
-                      : 'hover:bg-[var(--color-accent-dim)]/25'
+                  data-highlight={i === selected || undefined}
+                  className={`relative flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left ${
+                    i === selected ? '' : 'hover:bg-[var(--color-accent-dim)]/25'
                   }`}
                 >
                   <span className="min-w-0 flex-1">
@@ -196,6 +197,7 @@ export function CommandPalette() {
               </div>
             )
           })}
+          </Highlight>
         </div>
       </div>
     </div>

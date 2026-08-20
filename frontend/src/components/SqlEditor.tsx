@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { editorCandidates, tokenAt } from '../completion'
 import { activeSqlResult, useActiveKind, useHasSchemas, useStore } from '../store'
+import { Highlight } from './Highlight'
 import { Editor } from '../ui'
 import { useCellMenu } from './CellMenu'
 import { DataGrid } from './DataGrid'
@@ -94,15 +95,16 @@ export function SqlEditor() {
           several times over, and before this the later answers were dropped
           on the floor. Hidden for the single result that most runs produce. */}
       {sqlResults.length > 1 && (
-        <div className="chrome flex shrink-0 items-center gap-1 overflow-x-auto border-b border-[var(--color-border)] bg-[var(--color-panel)]/70 px-2 py-1.5">
+        <Highlight className="chrome flex shrink-0 items-center gap-1 overflow-x-auto border-b border-[var(--color-border)] bg-[var(--color-panel)]/70 px-2 py-1.5">
           {sqlResults.map((r, i) => (
             <button
               key={i}
               onClick={() => selectSqlResult(i)}
               title={r.query}
-              className={`shrink-0 rounded-lg px-2 py-0.5 ${
+              data-highlight={i === sqlResultIndex || undefined}
+              className={`relative shrink-0 rounded-lg px-2 py-0.5 ${
                 i === sqlResultIndex
-                  ? 'bg-[var(--color-accent-dim)]/60 font-bold text-[var(--color-accent)] shadow-xs'
+                  ? 'font-bold text-[var(--color-accent)]'
                   : 'text-[var(--color-muted)] hover:bg-[var(--color-elevated)]'
               }`}
             >
@@ -121,7 +123,7 @@ export function SqlEditor() {
               more not shown
             </span>
           )}
-        </div>
+        </Highlight>
       )}
 
       <div className="min-h-0 flex-1">

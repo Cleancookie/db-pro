@@ -215,6 +215,7 @@ button {
    stops them arriving in Windows blue on a lilac page. */
 input[type='checkbox'],
 input[type='radio'],
+input[type='range'],
 progress {
   accent-color: var(--color-accent);
 }
@@ -335,22 +336,51 @@ button:not(:disabled):active {
 }
 
 /*
- * A centred dialog is already transform-positioned, so it cannot use the
- * keyframes above — they would clobber the centring translate. This one
- * animates from the centred position instead.
+ * A centred dialog gets its own entrance, and it must touch `transform` only.
+ * Tailwind v4 centres with the standalone `translate` property rather than a
+ * transform, and the two compose: a keyframe that also wrote
+ * `translate(-50%, -50%)` moved the dialog a second half-width up and left,
+ * off the top corner of the window. Scale alone composes correctly.
  */
 @keyframes pop-in-centred {
   from {
     opacity: 0;
-    transform: translate(-50%, -50%) scale(0.96);
+    transform: scale(0.95);
   }
   to {
     opacity: 1;
-    transform: translate(-50%, -50%) scale(1);
+    transform: scale(1);
   }
 }
 .animate-pop-in-centred {
-  animation: pop-in-centred 200ms var(--ease-spring) both;
+  animation: pop-in-centred 220ms var(--ease-spring) both;
+}
+
+/*
+ * The moving highlight (see components/Highlight.tsx). One pill per list,
+ * which travels to whatever is selected rather than a background switching on
+ * in one row and off in another. Transform and size are animated — never
+ * `top`/`left` — so the whole thing stays on the compositor.
+ *
+ * The base has no transition: the very first placement must be instant, or the
+ * pill would fly in from the container's top-left corner every time a list
+ * mounts. `-moves` is added a frame later, once there is a position to move
+ * *from*.
+ */
+.highlight-pill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 0;
+  pointer-events: none;
+  transition: opacity 160ms var(--ease-snap);
+}
+.highlight-pill-moves {
+  transition:
+    transform 300ms var(--ease-spring),
+    width 300ms var(--ease-spring),
+    height 300ms var(--ease-spring),
+    opacity 160ms var(--ease-snap);
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -3,6 +3,7 @@ import { describeConnection, formatCount, objectCandidate, OBJECT_ICON, qualifie
 import { rankCandidates } from '../fuzzy'
 import { useStore, type SectionKey } from '../store'
 import { ConnectionMenu } from './ConnectionMenu'
+import { Highlight } from './Highlight'
 import { ObjectMenu } from './ObjectMenu'
 import { LIMITS, Resizer, useResizable } from './Resizer'
 import type { ObjectType, SchemaObject } from '../types'
@@ -83,7 +84,7 @@ export function Sidebar() {
           onClick: () => setDialog({ kind: 'connection', connection: null }),
         }}
       >
-        <div className="max-h-52 overflow-y-auto px-1.5 pb-1.5">
+        <Highlight className="max-h-52 overflow-y-auto px-1.5 pb-1.5">
           {connections.length === 0 && (
             <p className="px-1.5 py-2 leading-relaxed text-[var(--color-faint)]">
               No connections yet. Press{' '}
@@ -99,10 +100,9 @@ export function Sidebar() {
               <ConnectionMenu key={c.id} connection={c}>
                 <button
                   onClick={() => connect(c.id)}
-                  className={`flex w-full items-center gap-2 rounded-xl px-2 py-1.5 text-left ${
-                    active
-                      ? 'bg-[var(--color-accent-dim)]/55 font-bold shadow-xs'
-                      : 'hover:bg-[var(--color-elevated)] hover:shadow-xs'
+                  data-highlight={active || undefined}
+                  className={`relative flex w-full items-center gap-2 rounded-xl px-2 py-1.5 text-left ${
+                    active ? 'font-bold' : 'hover:bg-[var(--color-elevated)] hover:shadow-xs'
                   }`}
                 >
                   <span
@@ -126,7 +126,7 @@ export function Sidebar() {
               </ConnectionMenu>
             )
           })}
-        </div>
+        </Highlight>
       </Section>
 
       {activeConnectionId && capabilities?.serverHostsDatabases && (
@@ -148,15 +148,16 @@ export function Sidebar() {
               />
             )}
           </div>
-          <div className="max-h-44 overflow-y-auto px-1.5 pb-1.5">
+          <Highlight className="max-h-44 overflow-y-auto px-1.5 pb-1.5" pillClassName="rounded-lg bg-[var(--color-accent-dim)]/55">
             {visibleDatabases.map((d) => (
               <button
                 key={d}
                 onClick={() => selectDatabase(d)}
                 title={d}
-                className={`flex w-full items-center gap-1.5 rounded-lg px-2 py-[0.2rem] text-left ${
+                data-highlight={d === activeDatabase || undefined}
+                className={`relative flex w-full items-center gap-1.5 rounded-lg px-2 py-[0.2rem] text-left ${
                   d === activeDatabase
-                    ? 'bg-[var(--color-accent-dim)]/55 font-bold'
+                    ? 'font-bold'
                     : 'hover:bg-[var(--color-elevated)] hover:shadow-xs'
                 }`}
               >
@@ -164,7 +165,7 @@ export function Sidebar() {
                 <span className="min-w-0 flex-1 truncate">{d}</span>
               </button>
             ))}
-          </div>
+          </Highlight>
         </Section>
       )}
 
@@ -187,7 +188,7 @@ export function Sidebar() {
             />
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-3">
+          <Highlight className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-3" pillClassName="rounded-lg bg-[var(--color-accent-dim)]/55">
             {objects.length === 0 && (
               <p className="px-1.5 py-2 text-[var(--color-faint)]">No objects</p>
             )}
@@ -212,9 +213,10 @@ export function Sidebar() {
                       <button
                         onClick={() => openObject(o)}
                         title={qualified}
-                        className={`flex w-full items-center gap-1.5 rounded-lg px-2 py-[0.2rem] text-left ${
+                        data-highlight={active || undefined}
+                        className={`relative flex w-full items-center gap-1.5 rounded-lg px-2 py-[0.2rem] text-left ${
                           active
-                            ? 'bg-[var(--color-accent-dim)]/55 font-bold text-[var(--color-accent)]'
+                            ? 'font-bold text-[var(--color-accent)]'
                             : 'hover:bg-[var(--color-elevated)] hover:shadow-xs'
                         }`}
                       >
@@ -245,7 +247,7 @@ export function Sidebar() {
                 </section>
               )
             })}
-          </div>
+          </Highlight>
         </Section>
       )}
     </aside>
