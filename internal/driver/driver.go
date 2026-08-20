@@ -56,6 +56,16 @@ type Capabilities struct {
 	SupportsFunctions bool   `json:"supportsFunctions"`
 	DefaultPort       int    `json:"defaultPort"`
 	DisplayName       string `json:"displayName"`
+
+	// TruncateIsDelete is true for SQLite, which has no TRUNCATE and is emptied
+	// with DELETE FROM instead. The confirmation says which one it is about to
+	// run, because they are not the same statement: DELETE fires triggers, is
+	// transactional, and does not reset a sequence.
+	TruncateIsDelete bool `json:"truncateIsDelete"`
+	// CommonTypes seeds the type field in the new-table dialog with this
+	// dialect's usual spellings, identity column included. It is a starting
+	// point, not a whitelist — the field takes any type the engine accepts.
+	CommonTypes []string `json:"commonTypes"`
 }
 
 type Database struct {
@@ -297,6 +307,16 @@ type Driver interface {
 	// that need a deterministic sort for pagination (mssql) can pick one.
 	BuildSelect(ref ObjectRef, opts ReadOptions, cols []Column) (string, error)
 	BuildCount(ref ObjectRef, filter string) string
+
+	// The three statements behind the object menu. See ddl.go for why they are
+	// built per dialect rather than written once in the caller.
+	//
+	// BuildTruncate empties a table. SQLite returns a DELETE, which Caps
+	// advertises through TruncateIsDelete so the confirmation can say so.
+	BuildTruncate(ref ObjectRef) (string, error)
+	// BuildDrop drops a table or view. Any other object type is refused.
+	BuildDrop(ref ObjectRef, typ ObjectType) (string, error)
+	BuildCreateTable(spec CreateTableSpec) (string, error)
 }
 
 // textCapper is how a dialect says "the first n characters of this
@@ -387,6 +407,24 @@ func whereClause(filter string) string {
 
 func isSpace(b byte) bool {
 	return b == ' ' || b == '\t' || b == '\n' || b == '\r'
+}
+
+// DefaultOrderBy is the sort a table browse uses when the user has not picked
+// one: the primary key, descending. Newest-first is what someone opening a
+// table almost always wants to see, and an unordered read gives whatever the
+// engine finds first, which also makes paging non-deterministic.
+//
+// Composite keys are ordered by every part, in key order. A view, or a table
+// without a primary key, gets nothing — there is no column here worth guessing
+// at, and mssql still invents its own key for paging (see mssql.go).
+func DefaultOrderBy(cols []Column) []Sort {
+	var sorts []Sort
+	for _, c := range cols {
+		if c.PrimaryKey {
+			sorts = append(sorts, Sort{Column: c.Name, Desc: true})
+		}
+	}
+	return sorts
 }
 
 // orderByClause renders sorts, quoting each column. Unlike the filter, sort

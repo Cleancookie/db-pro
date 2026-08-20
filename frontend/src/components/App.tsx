@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { focusFilter } from '../commands'
 import { isTypingTarget } from '../dom'
-import { useStore } from '../store'
+import { activeSqlResult, useStore } from '../store'
 import { ActivityPage } from './ActivityPage'
 import { TableDetailsPage } from './TableDetailsPage'
 import { ActivityTray, ConfirmCancelDialog } from './ActivityTray'
@@ -12,6 +12,8 @@ import { ConfirmDeleteDialog } from './ConnectionMenu'
 import { ConnectionDialog } from './ConnectionDialog'
 import { DataGrid } from './DataGrid'
 import { FilterBar } from './FilterBar'
+import { NewTableDialog } from './NewTableDialog'
+import { ConfirmDropDialog, ConfirmTruncateDialog } from './ObjectMenu'
 import { Paginator } from './Paginator'
 import { SettingsDialog } from './SettingsDialog'
 import { ShortcutsDialog } from './ShortcutsDialog'
@@ -93,6 +95,11 @@ export function App() {
       {dialog.kind === 'confirmDelete' && (
         <ConfirmDeleteDialog name={dialog.connection.name} id={dialog.connection.id} />
       )}
+      {dialog.kind === 'confirmTruncate' && <ConfirmTruncateDialog target={dialog.ref} />}
+      {dialog.kind === 'confirmDrop' && (
+        <ConfirmDropDialog target={dialog.ref} type={dialog.type} />
+      )}
+      {dialog.kind === 'newTable' && <NewTableDialog schema={dialog.schema} />}
       {dialog.kind === 'confirmCancel' && (
         <ConfirmCancelDialog queryId={dialog.queryId} sql={dialog.sql} />
       )}
@@ -272,6 +279,6 @@ function useGlobalHotkeys() {
 /** Whether a result grid is the thing the user is looking at. */
 function gridOnScreen(s: ReturnType<typeof useStore.getState>): boolean {
   if (s.view === 'data') return s.result !== null && s.activeRef !== null
-  if (s.view === 'sql') return s.sqlResult !== null
+  if (s.view === 'sql') return activeSqlResult(s) !== null
   return false
 }

@@ -114,8 +114,24 @@ func (a *App) CountRows(req api.CountRowsRequest) (int64, error) {
 	return a.svc.CountRows(a.ctx, req)
 }
 
-func (a *App) RunSQL(req api.RunSQLRequest) (*driver.ResultSet, error) {
+func (a *App) RunSQL(req api.RunSQLRequest) (*api.RunSQLResult, error) {
 	return a.svc.RunSQL(a.ctx, req)
+}
+
+func (a *App) TruncateTable(req api.ObjectRequest) (*driver.ResultSet, error) {
+	return a.svc.TruncateTable(a.ctx, req)
+}
+
+func (a *App) DropObject(req api.DropObjectRequest) (*driver.ResultSet, error) {
+	return a.svc.DropObject(a.ctx, req)
+}
+
+func (a *App) CreateTable(req api.CreateTableRequest) (*driver.ResultSet, error) {
+	return a.svc.CreateTable(a.ctx, req)
+}
+
+func (a *App) PreviewCreateTable(req api.CreateTableRequest) (string, error) {
+	return a.svc.PreviewCreateTable(req)
 }
 
 func (a *App) GetSettings() config.Settings { return a.svc.GetSettings() }

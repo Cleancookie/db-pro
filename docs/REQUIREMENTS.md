@@ -247,6 +247,31 @@ focus handle (`registerFilterFocus`) and Ctrl+F calls through it.
 
 ---
 
+## 2026-08-18 — schema changes from the object menu
+
+### Requested
+
+Context menus for tables: truncate, drop, create a new table, and right-click
+to view table details (details was already there from the previous session).
+
+The instruction that shaped the build: make these **actions first**, reachable
+from the command palette, and hang the UI off them. A menu item is a second
+route to an action, never a second implementation.
+
+### Decided
+
+| Question | Choice |
+| --- | --- |
+| Where the statements are built | Per dialect, behind three new `Driver` methods (`BuildTruncate`, `BuildDrop`, `BuildCreateTable`) with the portable parts in `internal/driver/ddl.go`. The alternative — assembling DDL in the frontend — would have put quoting and the SQL Server `CREATE` problem in the one place that cannot be unit-tested cheaply |
+| SQLite's missing `TRUNCATE` | `DELETE FROM`, advertised through `Capabilities.TruncateIsDelete` so the confirmation names the statement it is actually about to run. The two are not interchangeable: `DELETE` fires triggers and rolls back |
+| `TRUNCATE … CASCADE` / `DROP … CASCADE` | **Neither.** Postgres refusing to truncate a referenced table is information, and the menu must never empty a table the user did not name |
+| SQL Server `CREATE TABLE` | Sent through the target database's own `sp_executesql`. `CREATE` accepts a database qualifier only when it names the *current* database, and this driver reaches other databases by qualifying rather than switching. A `USE` prefix would work and then leave the pooled connection pointing somewhere else for the next caller |
+| Column types in the new-table dialog | Free text, with the dialect's usual spellings offered as suggestions from `Capabilities.CommonTypes`. A closed dropdown cannot cover `numeric(10,2)`, `nvarchar(max)` and `bigint AUTO_INCREMENT`, and would be a permanent source of "the type I want is missing" |
+| Types and defaults as raw fragments | Accepted, on the same terms as the row filter (`docs/adr/0002`). Guarded only against a semicolon or a comment, so a typo cannot append a second statement |
+| Where confirmation lives | In the store action, not the call site. `truncateTable` / `dropObject` decide whether a confirmation is owed; `runTruncate` / `runDrop` are what the dialog calls. Splitting it is what stops one route confirming and another not |
+| The `CREATE` preview | Rendered by the driver through `PreviewCreateTable`, which runs no SQL and is not logged. A preview assembled by different code from the one that executes would eventually be a lie |
+| Activity log | New `ddl` query kind. An irreversible statement is exactly the one worth finding in the log afterwards |
+
 ## Invariants
 
 Things that are true on purpose. Breaking one should be a decision, not an
@@ -262,11 +287,13 @@ test — which is the intended speed bump.
 | `NULL` and `''` are distinguishable, in the API and in the grid | `internal/api/service_test.go` |
 | Paging visits every row exactly once — no skips, no repeats | `service_test.go` |
 | Pagination off emits **no** `LIMIT`; the row cap is applied while scanning instead | `internal/driver/driver_test.go` |
+| A browse with no sort chosen reads primary key descending, and reports the sort it used so `ReadCell` addresses the same row | `internal/api/service_test.go` |
 | SQL Server invents an `ORDER BY` when paging unsorted (PK → first column → constant), or `OFFSET/FETCH` silently reorders between pages | `driver_test.go` |
-| Every identifier is quoted per dialect; only the user's filter fragment is raw | `driver_test.go` |
+| Every identifier is quoted per dialect; only the user's filter fragment and a new column's type/default are raw | `driver_test.go`, `ddl_test.go` |
 | Non-finite floats are stringified — they cannot be JSON-encoded | `scan_test.go` |
 | The long-value cap is applied by the database, not after the fetch, and only to columns that can exceed it | `internal/driver/driver_test.go`, `internal/api/service_test.go` |
 | A capped cell is reported as capped — truncation is never silent | `service_test.go` |
+| A batch runs as one round trip on one connection, and every result set it produces comes back — `use db; select …` must not lose the rows | `internal/api/service_test.go` |
 | The full value of one cell is always reachable, on views and keyless tables too | `service_test.go` |
 
 ### Design decisions
@@ -285,10 +312,15 @@ test — which is the intended speed bump.
 | Query timers extrapolate from the last snapshot, never from `startedAt` | `startedAt` is the server's wall clock; clock skew would show a fresh query as minutes old |
 | The UI is sized in `rem` from a single root font size | The Settings slider must scale spacing and controls, not just text |
 | `frontend/dist/.gitkeep` stays tracked, and builds must not delete it | `main.go` embeds `frontend/dist`; without it a fresh clone will not compile |
+| A context-menu item fires a store action the palette also exposes | The palette is the primary surface. A menu that calls the API directly is a second code path where the confirmation and the refresh afterwards can drift |
+| Truncate and drop are decided in the store action, never at the call site | `runTruncate` / `runDrop` skip the confirmation by design; anything but a confirmation dialog calling them is a destructive statement with no prompt |
+| No DDL builder emits `CASCADE` | The engine refusing is the useful answer. `CASCADE` would act on objects the user never named |
+| `Capabilities.TruncateIsDelete` matches what `BuildTruncate` actually returns | `ddl_test.go`. The confirmation wording is derived from it, and it must not describe a statement other than the one that runs |
 
 ### Known gaps, accepted for now
 
 - **Passwords are plaintext on disk.** `docs/adr/0003`. Must not ship to anyone else's machine as-is.
 - **The filter is a SQL injection sink by construction.** Safe only while the input comes from the keyboard of whoever already holds the credentials.
-- **No read-only mode.** A user can type a destructive statement into the filter or the editor and mean it. Enforcing otherwise belongs at the session level, not in string parsing.
+- **No read-only mode.** A user can type a destructive statement into the filter or the editor and mean it. Enforcing otherwise belongs at the session level, not in string parsing. Truncate and drop being two clicks away in the object menu raises the stakes on this: the only guard is `confirmDestructive`, which the user can turn off.
+- **No `ALTER`.** Columns can be added to a new table but not to an existing one, and nothing can be renamed or retyped. The SQL editor is the route for now — see the wishlist.
 - **Wails v2 cannot cross-compile to macOS or Linux.** Windows works only because every driver is pure Go. Keep it that way — a cgo driver would end Windows cross-compilation from WSL.

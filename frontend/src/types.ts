@@ -11,6 +11,12 @@ export interface Capabilities {
   supportsFunctions: boolean
   defaultPort: number
   displayName: string
+  /** SQLite has no TRUNCATE and is emptied with DELETE FROM; the confirmation
+   *  says which, because they are not the same statement. */
+  truncateIsDelete: boolean
+  /** Seeds the type field in the new-table dialog. A starting point, not a
+   *  whitelist — the field takes any type the engine accepts. */
+  commonTypes: string[]
 }
 
 export interface Connection {
@@ -159,6 +165,17 @@ export interface ResultSet {
   query: string
 }
 
+/**
+ * What one run of the editor produced. A batch is one round trip that can
+ * answer several times over — `use other_db; select …` — so the editor shows a
+ * tab per result set.
+ */
+export interface RunSQLResult {
+  results: ResultSet[]
+  /** The batch produced more result sets than were kept. */
+  moreResults: boolean
+}
+
 /** One value fetched on its own, in full — see api.readCell. */
 export interface CellValue {
   /** null for NULL, which is not the same as an empty string. */
@@ -180,6 +197,8 @@ export interface ReadRowsResult {
   result: ResultSet
   columns: Column[]
   page: number
+  /** The sort the page was read with — the default one when none was asked for. */
+  orderBy: Sort[] | null
   hasMore: boolean
 }
 
@@ -210,7 +229,27 @@ export interface Settings {
   trayHeightPx: number
 }
 
-export type QueryKind = 'browse' | 'count' | 'query' | 'introspect'
+/**
+ * One column in a CREATE TABLE.
+ *
+ * `type` and `default` are raw SQL fragments, not values — `numeric(10,2)`,
+ * `now()` — because DDL takes no placeholders. Mirrors driver.NewColumn; the Go
+ * side rejects semicolons and comments in either, and nothing else.
+ */
+export interface NewColumn {
+  name: string
+  type: string
+  nullable: boolean
+  primaryKey: boolean
+  default: string
+}
+
+export interface CreateTableSpec {
+  ref: ObjectRef
+  columns: NewColumn[]
+}
+
+export type QueryKind = 'browse' | 'count' | 'query' | 'introspect' | 'ddl'
 
 /**
  * The app's own lifecycle states, instrumented in internal/activity,

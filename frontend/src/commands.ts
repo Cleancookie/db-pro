@@ -53,6 +53,20 @@ export function qualifiedName(o: { schema: string; name: string }): string {
 }
 
 /**
+ * What kind of object is on screen, looked up in the tree.
+ *
+ * ObjectRef carries no type — it is only an address — and the difference matters
+ * to the schema commands: a view has no rows to empty, and its DROP names a
+ * different keyword. null when nothing is open, or when the tree has not been
+ * loaded and the answer is not known.
+ */
+function activeType(s: Store): ObjectType | null {
+  if (!s.activeRef) return null
+  const ref = s.activeRef
+  return s.objects.find((o) => o.name === ref.name && o.schema === ref.schema)?.type ?? null
+}
+
+/**
  * The navigation palette (Ctrl+P): places to go.
  *
  * Tables, views, databases and connections — the things a person means when
@@ -243,6 +257,22 @@ export function buildActionCommands(s: Store): Command[] {
     })
   }
 
+  // Only a batch that answered more than once has tabs to move between.
+  if (s.sqlResults.length > 1) {
+    const next = (s.sqlResultIndex + 1) % s.sqlResults.length
+    cmds.push({
+      id: 'sql:next-result',
+      title: `Show result ${next + 1} of ${s.sqlResults.length}`,
+      subtitle: 'The next result set this batch returned',
+      group: 'Query',
+      candidate: {
+        name: 'Next result set',
+        keywords: 'result set batch tab next switch multiple statements',
+      },
+      run: async () => s.selectSqlResult(next),
+    })
+  }
+
   cmds.push({
     id: 'grid:transpose',
     title: s.transposed ? 'Show rows across' : 'Transpose the grid',
@@ -258,6 +288,22 @@ export function buildActionCommands(s: Store): Command[] {
     run: () => s.toggleTransposed(),
   })
 
+  if (s.activeConnectionId) {
+    cmds.push({
+      id: 'schema:new-table',
+      title: 'New table…',
+      subtitle: 'Name, columns, types — shows the CREATE before running it',
+      group: 'Schema',
+      candidate: {
+        name: 'New table…',
+        keywords: 'create add make table schema column ddl',
+      },
+      // The schema of whatever is open is the likeliest place to want the new
+      // table, and the dialog lets it be changed anyway.
+      run: () => s.newTable(s.activeRef?.schema),
+    })
+  }
+
   if (s.activeRef) {
     cmds.push({
       id: 'data:details',
@@ -271,6 +317,44 @@ export function buildActionCommands(s: Store): Command[] {
       },
       run: () => s.openDetails(s.activeRef!),
     })
+    // The schema changes for the table on screen. The context menu in the
+    // sidebar fires exactly these store actions against the object it is
+    // attached to, so the confirmation and the refresh afterwards are the same
+    // whichever route was taken.
+    if (activeType(s) === 'table') {
+      cmds.push({
+        id: 'schema:truncate',
+        title: `Empty ${qualifiedName(s.activeRef)}`,
+        subtitle: s.capabilities?.truncateIsDelete
+          ? 'Deletes every row — SQLite has no TRUNCATE'
+          : 'TRUNCATE — deletes every row and cannot be undone',
+        group: 'Schema',
+        candidate: {
+          name: `Empty ${s.activeRef.name}`,
+          keywords: 'truncate empty clear delete all rows wipe',
+          // Below the read-only entries: an irreversible statement should not
+          // be what an empty palette offers first.
+          bias: -0.4,
+        },
+        run: () => s.truncateTable(s.activeRef!),
+      })
+    }
+    if (activeType(s) === 'table' || activeType(s) === 'view') {
+      const type = activeType(s)!
+      cmds.push({
+        id: 'schema:drop',
+        title: `Drop ${type} ${qualifiedName(s.activeRef)}`,
+        subtitle: 'Removes the object and its data — cannot be undone',
+        group: 'Schema',
+        candidate: {
+          name: `Drop ${s.activeRef.name}`,
+          keywords: 'drop delete remove destroy table view',
+          bias: -0.4,
+        },
+        run: () => s.dropObject(s.activeRef!, type),
+      })
+    }
+
     cmds.push({
       id: 'data:refresh',
       title: 'Refresh rows',

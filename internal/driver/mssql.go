@@ -28,6 +28,12 @@ func (mssqlDriver) Caps() Capabilities {
 		DatabasePerConnection: false,
 		SupportsFunctions:     true,
 		DefaultPort:           1433,
+		CommonTypes: []string{
+			"bigint IDENTITY(1,1)", "int", "bigint", "bit",
+			"nvarchar(255)", "nvarchar(max)", "varchar(255)", "uniqueidentifier",
+			"decimal(10,2)", "float",
+			"date", "datetime2", "datetimeoffset", "varbinary(max)",
+		},
 	}
 }
 
@@ -282,6 +288,37 @@ func (d mssqlDriver) stableSortKey(cols []Column) string {
 
 func (d mssqlDriver) BuildCount(ref ObjectRef, filter string) string {
 	return "SELECT count_big(*) FROM " + d.target(ref) + whereClause(filter)
+}
+
+func (d mssqlDriver) BuildTruncate(ref ObjectRef) (string, error) {
+	return "TRUNCATE TABLE " + d.target(ref), nil
+}
+
+func (d mssqlDriver) BuildDrop(ref ObjectRef, typ ObjectType) (string, error) {
+	return buildDrop(d.target(ref), typ)
+}
+
+// BuildCreateTable cannot use the three-part name the rest of this driver relies
+// on: SQL Server accepts a database qualifier on CREATE TABLE only when it names
+// the *current* database, and this connection reaches other databases by
+// qualifying rather than by switching. Sending the statement to the target
+// database's own sp_executesql runs it in that database's context. A `USE`
+// prefix would do the same thing and then leave the pooled connection pointing
+// somewhere else for whoever picks it up next.
+func (d mssqlDriver) BuildCreateTable(spec CreateTableSpec) (string, error) {
+	schema := spec.Ref.Schema
+	if schema == "" {
+		schema = "dbo"
+	}
+	stmt, err := buildCreateTable(d, qualify(d, schema, spec.Ref.Name), spec)
+	if err != nil {
+		return "", err
+	}
+	if spec.Ref.Database == "" {
+		return stmt, nil
+	}
+	return "EXEC " + qualify(d, spec.Ref.Database, "sys", "sp_executesql") +
+		" N'" + strings.ReplaceAll(stmt, "'", "''") + "'", nil
 }
 
 // DescribeObject reads the sys.* catalog views rather than INFORMATION_SCHEMA,

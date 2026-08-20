@@ -28,6 +28,12 @@ func (mysqlDriver) Caps() Capabilities {
 		DatabasePerConnection: false,
 		SupportsFunctions:     true,
 		DefaultPort:           3306,
+		CommonTypes: []string{
+			"bigint AUTO_INCREMENT", "int", "bigint", "tinyint(1)",
+			"varchar(255)", "text", "longtext", "json",
+			"decimal(10,2)", "double", "date", "datetime", "timestamp",
+			"char(36)", "blob",
+		},
 	}
 }
 
@@ -206,6 +212,18 @@ func (d mysqlDriver) BuildSelect(ref ObjectRef, opts ReadOptions, cols []Column)
 
 func (d mysqlDriver) BuildCount(ref ObjectRef, filter string) string {
 	return "SELECT count(*) FROM " + d.target(ref) + whereClause(filter)
+}
+
+func (d mysqlDriver) BuildTruncate(ref ObjectRef) (string, error) {
+	return "TRUNCATE TABLE " + d.target(ref), nil
+}
+
+func (d mysqlDriver) BuildDrop(ref ObjectRef, typ ObjectType) (string, error) {
+	return buildDrop(d.target(ref), typ)
+}
+
+func (d mysqlDriver) BuildCreateTable(spec CreateTableSpec) (string, error) {
+	return buildCreateTable(d, d.target(spec.Ref), spec)
 }
 
 // DescribeObject answers every field: MySQL's information_schema carries row

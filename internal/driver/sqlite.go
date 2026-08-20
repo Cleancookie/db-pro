@@ -25,6 +25,15 @@ func (sqliteDriver) Caps() Capabilities {
 		HasSchemas:           false,
 		// SQLite has no queryable catalog of user functions.
 		SupportsFunctions: false,
+		// No TRUNCATE in SQLite; the object menu runs DELETE FROM instead.
+		TruncateIsDelete: true,
+		CommonTypes: []string{
+			"INTEGER", "TEXT", "REAL", "BLOB", "NUMERIC",
+			// The declared types below are conventions rather than storage
+			// classes — SQLite keeps them verbatim and applies its own affinity
+			// rules — but they are what the surrounding tooling expects to read.
+			"BOOLEAN", "DATE", "DATETIME",
+		},
 	}
 }
 
@@ -132,6 +141,22 @@ func (d sqliteDriver) BuildSelect(ref ObjectRef, opts ReadOptions, cols []Column
 
 func (d sqliteDriver) BuildCount(ref ObjectRef, filter string) string {
 	return "SELECT count(*) FROM " + d.target(ref) + whereClause(filter)
+}
+
+// BuildTruncate is a DELETE: SQLite has no TRUNCATE at all. The optimiser turns
+// an unqualified DELETE into a truncate internally, so the cost is the same, but
+// the semantics are not — triggers fire and it rolls back — which is why Caps
+// advertises TruncateIsDelete for the confirmation to say so.
+func (d sqliteDriver) BuildTruncate(ref ObjectRef) (string, error) {
+	return "DELETE FROM " + d.target(ref), nil
+}
+
+func (d sqliteDriver) BuildDrop(ref ObjectRef, typ ObjectType) (string, error) {
+	return buildDrop(d.target(ref), typ)
+}
+
+func (d sqliteDriver) BuildCreateTable(spec CreateTableSpec) (string, error) {
+	return buildCreateTable(d, d.target(spec.Ref), spec)
 }
 
 // DescribeObject is the most restricted of the four. SQLite has no

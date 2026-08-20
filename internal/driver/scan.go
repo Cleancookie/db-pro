@@ -52,13 +52,15 @@ type QueryOptions struct {
 // updated while streaming.
 const rowReportInterval = 512
 
+// MaxResultSets bounds how many result sets one batch may hand back. A
+// `WHILE` loop with a SELECT in it can emit them without end, and each one is
+// only row-capped, not free.
+const MaxResultSets = 32
+
 // RunQuery executes a query and normalises the result into a JSON-safe
-// ResultSet.
+// ResultSet. A batch that produces several is not what this call is for — see
+// RunQueryAll — and only the first is read.
 func RunQuery(ctx context.Context, db *sql.DB, query string, opts QueryOptions) (*ResultSet, error) {
-	rowCap := opts.RowCap
-	if rowCap <= 0 || rowCap > HardRowCap {
-		rowCap = HardRowCap
-	}
 	start := time.Now()
 
 	// Phase reporting for the activity tray. QueryContext covers both the wait
@@ -71,6 +73,74 @@ func RunQuery(ctx context.Context, db *sql.DB, query string, opts QueryOptions) 
 	}
 	defer rows.Close()
 	activity.SetPhase(ctx, activity.PhaseReading)
+
+	out, err := scanResultSet(ctx, rows, query, opts)
+	if err != nil {
+		return nil, err
+	}
+	out.ElapsedMS = time.Since(start).Milliseconds()
+	return out, nil
+}
+
+// RunQueryAll executes a batch — one or many statements in one round trip, on
+// one connection — and returns every result set it produced, in order.
+//
+// One round trip and not one per statement: `use other_db; select …` only
+// means anything if both halves land on the same session, and splitting the
+// text here would hand the second half to whatever connection the pool
+// happened to be holding.
+//
+// Result sets with no columns are dropped. Every statement in a batch reports
+// one, so keeping them would put an empty tab in front of the user for the
+// `use` they wrote as setup. more is true when the batch produced more than
+// MaxResultSets and reading stopped early.
+func RunQueryAll(ctx context.Context, db *sql.DB, query string, opts QueryOptions) (sets []*ResultSet, more bool, err error) {
+	start := time.Now()
+
+	activity.SetPhase(ctx, activity.PhaseExecuting)
+	rows, err := db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, false, err
+	}
+	defer rows.Close()
+	activity.SetPhase(ctx, activity.PhaseReading)
+
+	for {
+		rs, err := scanResultSet(ctx, rows, query, opts)
+		if err != nil {
+			return nil, false, err
+		}
+		if len(rs.Columns) > 0 {
+			sets = append(sets, rs)
+		}
+		if len(sets) >= MaxResultSets {
+			more = true
+			break
+		}
+		if !rows.NextResultSet() {
+			break
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, false, err
+	}
+
+	// One elapsed time, stamped on each: the batch was one round trip and the
+	// per-statement split is not something the client can be told honestly.
+	elapsed := time.Since(start).Milliseconds()
+	for _, rs := range sets {
+		rs.ElapsedMS = elapsed
+	}
+	return sets, more, nil
+}
+
+// scanResultSet reads the result set rows is currently positioned on. It does
+// not advance to the next one — that is the caller's business.
+func scanResultSet(ctx context.Context, rows *sql.Rows, query string, opts QueryOptions) (*ResultSet, error) {
+	rowCap := opts.RowCap
+	if rowCap <= 0 || rowCap > HardRowCap {
+		rowCap = HardRowCap
+	}
 
 	colTypes, err := rows.ColumnTypes()
 	if err != nil {
@@ -128,8 +198,6 @@ func RunQuery(ctx context.Context, db *sql.DB, query string, opts QueryOptions) 
 		return nil, err
 	}
 	activity.AddRows(ctx, int64(len(out.Rows)%rowReportInterval))
-
-	out.ElapsedMS = time.Since(start).Milliseconds()
 	return out, nil
 }
 

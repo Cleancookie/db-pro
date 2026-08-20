@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -48,6 +49,20 @@ func newTestService(t *testing.T) (*Service, string) {
 		t.Fatalf("saving connection: %v", err)
 	}
 	return svc, conn.ID
+}
+
+// runOne runs a batch expected to produce exactly one result set and returns
+// it, so tests that predate multi-result batches read as they did.
+func runOne(t *testing.T, svc *Service, id, sql string) *driver.ResultSet {
+	t.Helper()
+	res, err := svc.RunSQL(context.Background(), RunSQLRequest{ConnectionID: id, SQL: sql})
+	if err != nil {
+		t.Fatalf("running %q: %v", sql, err)
+	}
+	if len(res.Results) != 1 {
+		t.Fatalf("running %q gave %d result sets, want 1", sql, len(res.Results))
+	}
+	return res.Results[0]
 }
 
 func mustRun(t *testing.T, svc *Service, id, sql string) {
@@ -326,12 +341,7 @@ func TestRunSQLDistinguishesQueriesFromStatements(t *testing.T) {
 	svc, id := newTestService(t)
 	seed(t, svc, id, 5)
 
-	q, err := svc.RunSQL(context.Background(), RunSQLRequest{
-		ConnectionID: id, SQL: "SELECT id, customer FROM orders ORDER BY id",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	q := runOne(t, svc, id, "SELECT id, customer FROM orders ORDER BY id")
 	if len(q.Rows) != 5 || len(q.Columns) != 2 {
 		t.Errorf("got %d rows / %d cols, want 5/2", len(q.Rows), len(q.Columns))
 	}
@@ -339,12 +349,7 @@ func TestRunSQLDistinguishesQueriesFromStatements(t *testing.T) {
 		t.Error("a SELECT should not report rows affected")
 	}
 
-	e, err := svc.RunSQL(context.Background(), RunSQLRequest{
-		ConnectionID: id, SQL: "UPDATE orders SET note = 'seen'",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	e := runOne(t, svc, id, "UPDATE orders SET note = 'seen'")
 	if e.RowsAffected == nil || *e.RowsAffected != 5 {
 		t.Errorf("got %v rows affected, want 5", e.RowsAffected)
 	}
@@ -354,6 +359,7 @@ func TestReturnsRowsClassifier(t *testing.T) {
 	queries := []string{
 		"SELECT 1", "select 1", "  \n SELECT 1", "WITH x AS (SELECT 1) SELECT * FROM x",
 		"-- a comment\nSELECT 1", "PRAGMA table_info(t)", "EXPLAIN SELECT 1", "(SELECT 1)",
+		";WITH x AS (SELECT 1) SELECT * FROM x",
 	}
 	for _, q := range queries {
 		if !returnsRows(q) {
@@ -495,12 +501,7 @@ func TestAdHocSQLIsCappedWhileScanning(t *testing.T) {
 	seedDocs(t, svc, id, 5000)
 	setTextCap(t, svc, 32)
 
-	res, err := svc.RunSQL(context.Background(), RunSQLRequest{
-		ConnectionID: id, SQL: "SELECT body FROM docs ORDER BY id",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	res := runOne(t, svc, id, "SELECT body FROM docs ORDER BY id")
 	if res.Query != "SELECT body FROM docs ORDER BY id" {
 		t.Errorf("the user's statement was rewritten: %q", res.Query)
 	}
@@ -829,5 +830,150 @@ func TestClearQueryHistoryEmptiesTheLog(t *testing.T) {
 	svc.ClearQueryHistory()
 	if got := svc.Activity().Queries; len(got) != 0 {
 		t.Fatalf("Activity() = %+v after clearing, want empty", got)
+	}
+}
+
+// A table browse with no sort chosen must come back newest-first on the
+// primary key, and must say so, or the grid cannot mark the header and
+// ReadCell cannot address the same row.
+func TestReadRowsDefaultsToPrimaryKeyDescending(t *testing.T) {
+	svc, id := newTestService(t)
+	seed(t, svc, id, 5)
+
+	res, err := svc.ReadRows(context.Background(), ReadRowsRequest{
+		ConnectionID:     id,
+		Ref:              driver.ObjectRef{Database: "main", Name: "orders"},
+		ApplyDefaultSort: true,
+		Pagination:       Pagination{Enabled: true, Page: 1, PageSize: 10},
+	})
+	if err != nil {
+		t.Fatalf("reading rows: %v", err)
+	}
+	want := []driver.Sort{{Column: "id", Desc: true}}
+	if !reflect.DeepEqual(res.OrderBy, want) {
+		t.Errorf("effective sort = %v, want %v", res.OrderBy, want)
+	}
+	if got := res.Result.Rows[0][0]; fmt.Sprint(got) != "5" {
+		t.Errorf("first row id = %v, want the highest id", got)
+	}
+}
+
+// An explicit sort is never second-guessed.
+func TestReadRowsKeepsTheSortItWasGiven(t *testing.T) {
+	svc, id := newTestService(t)
+	seed(t, svc, id, 5)
+
+	res, err := svc.ReadRows(context.Background(), ReadRowsRequest{
+		ConnectionID: id,
+		Ref:          driver.ObjectRef{Database: "main", Name: "orders"},
+		OrderBy:      []driver.Sort{{Column: "id"}},
+		Pagination:   Pagination{Enabled: true, Page: 1, PageSize: 10},
+	})
+	if err != nil {
+		t.Fatalf("reading rows: %v", err)
+	}
+	if got := res.Result.Rows[0][0]; fmt.Sprint(got) != "1" {
+		t.Errorf("first row id = %v, want the lowest id", got)
+	}
+}
+
+// A view has no primary key, so there is nothing to default to and the browse
+// must still work.
+func TestReadRowsHasNoDefaultSortWithoutAPrimaryKey(t *testing.T) {
+	svc, id := newTestService(t)
+	seed(t, svc, id, 5)
+
+	res, err := svc.ReadRows(context.Background(), ReadRowsRequest{
+		ConnectionID:     id,
+		Ref:              driver.ObjectRef{Database: "main", Name: "big_orders"},
+		ApplyDefaultSort: true,
+		Pagination:       Pagination{Enabled: true, Page: 1, PageSize: 10},
+	})
+	if err != nil {
+		t.Fatalf("reading the view: %v", err)
+	}
+	if len(res.OrderBy) != 0 {
+		t.Errorf("invented a sort for a view: %v", res.OrderBy)
+	}
+}
+
+// Cycling the sort off is not the same as never having chosen one: the user
+// asked for the engine's own order and must not be given the default back.
+func TestReadRowsLeavesAnEmptySortEmptyWhenNotAskedToDefault(t *testing.T) {
+	svc, id := newTestService(t)
+	seed(t, svc, id, 5)
+
+	res, err := svc.ReadRows(context.Background(), ReadRowsRequest{
+		ConnectionID: id,
+		Ref:          driver.ObjectRef{Database: "main", Name: "orders"},
+		Pagination:   Pagination{Enabled: true, Page: 1, PageSize: 10},
+	})
+	if err != nil {
+		t.Fatalf("reading rows: %v", err)
+	}
+	if len(res.OrderBy) != 0 {
+		t.Errorf("sorted anyway: %v", res.OrderBy)
+	}
+	if strings.Contains(res.Result.Query, "ORDER BY") {
+		t.Errorf("emitted an ORDER BY: %q", res.Result.Query)
+	}
+}
+
+// The bug this replaced: a batch was classified on its first keyword, so
+// `use db; select …` was Exec'd and the rows were thrown away.
+func TestBatchWithAQueryAnywhereReturnsItsRows(t *testing.T) {
+	svc, id := newTestService(t)
+	seed(t, svc, id, 3)
+
+	res, err := svc.RunSQL(context.Background(), RunSQLRequest{
+		ConnectionID: id,
+		SQL:          "PRAGMA foreign_keys; SELECT id FROM orders ORDER BY id",
+	})
+	if err != nil {
+		t.Fatalf("running the batch: %v", err)
+	}
+	last := res.Results[len(res.Results)-1]
+	if len(last.Rows) != 3 {
+		t.Errorf("got %d rows from the batch, want 3", len(last.Rows))
+	}
+}
+
+func TestSplitStatements(t *testing.T) {
+	cases := []struct {
+		in   string
+		want int
+	}{
+		{"SELECT 1", 1},
+		{"use db; select 1", 2},
+		{"select ';' ; select 2", 2},
+		{"select \"a;b\" from t", 1},
+		{"select [a;b] from t", 1},
+		{"-- ; not a split\nselect 1", 1},
+		{"/* ; */ select 1", 1},
+		{"select 'it''s ; fine'", 1},
+	}
+	for _, c := range cases {
+		if got := len(splitStatements(c.in)); got != c.want {
+			t.Errorf("splitStatements(%q) gave %d statements, want %d", c.in, got, c.want)
+		}
+	}
+}
+
+func TestBatchReturnsRows(t *testing.T) {
+	yes := []string{
+		"use db; select 1",
+		"SET NOCOUNT ON;\nSELECT 1",
+		"insert into t values (1); select * from t",
+	}
+	for _, b := range yes {
+		if !batchReturnsRows(b) {
+			t.Errorf("%q has a query in it and was not treated as one", b)
+		}
+	}
+	no := []string{"insert into t values (1); update t set a = 2", "use db;"}
+	for _, b := range no {
+		if batchReturnsRows(b) {
+			t.Errorf("%q returns no rows but was treated as a query", b)
+		}
 	}
 }

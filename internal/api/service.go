@@ -352,15 +352,25 @@ type ReadRowsRequest struct {
 	ConnectionID string           `json:"connectionId"`
 	Ref          driver.ObjectRef `json:"ref"`
 	// Filter is raw SQL appended after WHERE — see docs/adr/0002-raw-sql-filter.md.
-	Filter     string        `json:"filter"`
-	OrderBy    []driver.Sort `json:"orderBy"`
-	Pagination Pagination    `json:"pagination"`
+	Filter  string        `json:"filter"`
+	OrderBy []driver.Sort `json:"orderBy"`
+	// ApplyDefaultSort fills an empty OrderBy with driver.DefaultOrderBy. It is
+	// opt-in because an empty sort has two meanings: the table was just opened
+	// and nobody has chosen one, or the user cycled the sort off and wants the
+	// rows in whatever order the engine gives them.
+	ApplyDefaultSort bool       `json:"applyDefaultSort"`
+	Pagination       Pagination `json:"pagination"`
 }
 
 type ReadRowsResult struct {
 	Result  *driver.ResultSet `json:"result"`
 	Columns []driver.Column   `json:"columns"`
 	Page    int               `json:"page"`
+	// OrderBy is the sort the page was actually read with, which is the one the
+	// request asked for or, when it asked for none, the default from
+	// driver.DefaultOrderBy. The UI needs the effective sort to mark the header
+	// and to address a cell with ReadCell.
+	OrderBy []driver.Sort `json:"orderBy"`
 	// HasMore is derived by asking for one row more than the page size, which
 	// tells the UI whether to enable "next page" without a COUNT(*).
 	HasMore bool `json:"hasMore"`
@@ -432,9 +442,13 @@ func (s *Service) ReadRows(ctx context.Context, req ReadRowsRequest) (*ReadRowsR
 	if page < 1 {
 		page = 1
 	}
+	orderBy := req.OrderBy
+	if len(orderBy) == 0 && req.ApplyDefaultSort {
+		orderBy = driver.DefaultOrderBy(cols)
+	}
 	opts := driver.ReadOptions{
 		Filter:  req.Filter,
-		OrderBy: req.OrderBy,
+		OrderBy: orderBy,
 		TextCap: settings.TextCapChars,
 	}
 	if req.Pagination.Enabled {
@@ -470,7 +484,7 @@ func (s *Service) ReadRows(ctx context.Context, req ReadRowsRequest) (*ReadRowsR
 		return nil, err
 	}
 
-	out := &ReadRowsResult{Result: rs, Columns: cols, Page: page}
+	out := &ReadRowsResult{Result: rs, Columns: cols, Page: page, OrderBy: orderBy}
 	if req.Pagination.Enabled {
 		size := opts.Limit - 1
 		if len(rs.Rows) > size {
@@ -499,6 +513,9 @@ type ReadCellRequest struct {
 	// offset addresses a different row.
 	Filter  string        `json:"filter"`
 	OrderBy []driver.Sort `json:"orderBy"`
+	// ApplyDefaultSort means the same as it does on ReadRowsRequest, and must
+	// be passed the same way the page was read or the offset moves.
+	ApplyDefaultSort bool `json:"applyDefaultSort"`
 	// RowOffset is 0-based and absolute, not relative to the page.
 	RowOffset int `json:"rowOffset"`
 }
@@ -526,10 +543,18 @@ func (s *Service) ReadCell(ctx context.Context, req ReadCellRequest) (*driver.Ce
 		return nil, fmt.Errorf("no column %q on %s", req.Column, req.Ref.Name)
 	}
 
+	// The same defaulting as ReadRows, for the same reason as the columns
+	// above: the row at this offset is only the row the user clicked if both
+	// queries are ordered identically.
+	orderBy := req.OrderBy
+	if len(orderBy) == 0 && req.ApplyDefaultSort {
+		orderBy = driver.DefaultOrderBy(cols)
+	}
+
 	// TextCap is deliberately absent: this call exists to defeat it.
 	stmt, err := sess.Driver.BuildSelect(req.Ref, driver.ReadOptions{
 		Filter:  req.Filter,
-		OrderBy: req.OrderBy,
+		OrderBy: orderBy,
 		Select:  []string{req.Column},
 		Limit:   1,
 		Offset:  req.RowOffset,
@@ -602,6 +627,111 @@ func (s *Service) CountRows(ctx context.Context, req CountRowsRequest) (int64, e
 	return n, nil
 }
 
+// --- schema changes ----------------------------------------------------------------
+
+// The three statements behind the object menu. Each is built by the dialect (see
+// internal/driver/ddl.go) and run through the same middleware chain as
+// everything else, so a truncate shows up in the activity log next to the
+// queries around it — which for an irreversible statement is the point.
+//
+// None of the three asks for confirmation here. The confirmation is the UI's
+// job, because only the UI knows whether the user has turned it off; by the time
+// a call reaches this package the decision has been made.
+
+type ObjectRequest struct {
+	ConnectionID string           `json:"connectionId"`
+	Ref          driver.ObjectRef `json:"ref"`
+}
+
+// TruncateTable empties a table. On SQLite this is a DELETE — see
+// Capabilities.TruncateIsDelete.
+func (s *Service) TruncateTable(ctx context.Context, req ObjectRequest) (*driver.ResultSet, error) {
+	sess, err := s.session(ctx, req.ConnectionID, req.Ref.Database)
+	if err != nil {
+		return nil, err
+	}
+	stmt, err := sess.Driver.BuildTruncate(req.Ref)
+	if err != nil {
+		return nil, err
+	}
+	return s.exec(ctx, sess, req.ConnectionID, req.Ref.Database, stmt)
+}
+
+type DropObjectRequest struct {
+	ConnectionID string            `json:"connectionId"`
+	Ref          driver.ObjectRef  `json:"ref"`
+	Type         driver.ObjectType `json:"type"`
+}
+
+// DropObject drops a table or view. Functions and procedures are refused by the
+// driver rather than here, because whether they can be named in a DROP without
+// their signature is a dialect question.
+func (s *Service) DropObject(ctx context.Context, req DropObjectRequest) (*driver.ResultSet, error) {
+	sess, err := s.session(ctx, req.ConnectionID, req.Ref.Database)
+	if err != nil {
+		return nil, err
+	}
+	stmt, err := sess.Driver.BuildDrop(req.Ref, req.Type)
+	if err != nil {
+		return nil, err
+	}
+	return s.exec(ctx, sess, req.ConnectionID, req.Ref.Database, stmt)
+}
+
+type CreateTableRequest struct {
+	ConnectionID string                 `json:"connectionId"`
+	Spec         driver.CreateTableSpec `json:"spec"`
+}
+
+func (s *Service) CreateTable(ctx context.Context, req CreateTableRequest) (*driver.ResultSet, error) {
+	sess, err := s.session(ctx, req.ConnectionID, req.Spec.Ref.Database)
+	if err != nil {
+		return nil, err
+	}
+	stmt, err := sess.Driver.BuildCreateTable(req.Spec)
+	if err != nil {
+		return nil, err
+	}
+	return s.exec(ctx, sess, req.ConnectionID, req.Spec.Ref.Database, stmt)
+}
+
+// PreviewCreateTable renders the statement without running it, for the dialog to
+// show. It resolves the dialect from the saved connection rather than from a
+// session, so it neither dials nor needs the connection to be open — and it
+// deliberately does not go through the runner, since nothing is executed and an
+// activity entry per keystroke would bury the log.
+func (s *Service) PreviewCreateTable(req CreateTableRequest) (string, error) {
+	cfg, err := s.store.DriverConfig(req.ConnectionID)
+	if err != nil {
+		return "", err
+	}
+	d, err := driver.Get(cfg.Kind)
+	if err != nil {
+		return "", err
+	}
+	return d.BuildCreateTable(req.Spec)
+}
+
+// exec is the shared tail of the three above: one statement, through the
+// middleware, logged as DDL. The session is passed in because each caller has
+// already resolved one to build the statement with.
+func (s *Service) exec(ctx context.Context, sess *engine.Session, connID, database, stmt string) (*driver.ResultSet, error) {
+	var rs *driver.ResultSet
+	if err := s.runner.Do(ctx, query.Op{
+		ConnectionID: connID,
+		Database:     database,
+		Kind:         activity.KindDDL,
+		SQL:          stmt,
+	}, func(qctx context.Context) error {
+		var err error
+		rs, err = driver.Exec(qctx, sess.DB, stmt)
+		return err
+	}); err != nil {
+		return nil, err
+	}
+	return rs, nil
+}
+
 // --- SQL editor --------------------------------------------------------------------
 
 type RunSQLRequest struct {
@@ -612,7 +742,22 @@ type RunSQLRequest struct {
 	MaxRows int `json:"maxRows"`
 }
 
-func (s *Service) RunSQL(ctx context.Context, req RunSQLRequest) (*driver.ResultSet, error) {
+// RunSQLResult is what one run of the editor produced. A list because a batch
+// is one round trip that can answer several times over — `use other_db;
+// select …` is two statements and one of them has rows — and the editor shows
+// a tab per result set.
+type RunSQLResult struct {
+	// Results holds every result set the batch produced, in order. Empty for a
+	// batch that returned none: an INSERT reports through RowsAffected on a
+	// single, column-less entry instead.
+	Results []*driver.ResultSet `json:"results"`
+	// MoreResults is set when the batch produced more result sets than
+	// driver.MaxResultSets, so the UI can say the list was cut rather than
+	// implying it is complete.
+	MoreResults bool `json:"moreResults"`
+}
+
+func (s *Service) RunSQL(ctx context.Context, req RunSQLRequest) (*RunSQLResult, error) {
 	stmt := strings.TrimSpace(req.SQL)
 	if stmt == "" {
 		return nil, fmt.Errorf("nothing to run")
@@ -628,30 +773,109 @@ func (s *Service) RunSQL(ctx context.Context, req RunSQLRequest) (*driver.Result
 		maxRows = settings.RowCap
 	}
 
-	var rs *driver.ResultSet
+	out := &RunSQLResult{}
 	if err := s.runner.Do(ctx, query.Op{
 		ConnectionID: req.ConnectionID,
 		Database:     req.Database,
 		Kind:         activity.KindQuery,
 		SQL:          stmt,
 	}, func(qctx context.Context) error {
-		var err error
-		if returnsRows(stmt) {
+		// Any statement in the batch that returns rows sends the whole batch
+		// down the query path: Exec would run it all and throw those rows
+		// away, which is what `use db; select …` used to do.
+		if batchReturnsRows(stmt) {
 			// The editor's SQL is the user's own text and must not be
 			// rewritten, so the text cap here is applied while scanning. It
 			// keeps the grid responsive; it cannot keep the bytes off the wire.
-			rs, err = driver.RunQuery(qctx, sess.DB, stmt, driver.QueryOptions{
+			sets, more, err := driver.RunQueryAll(qctx, sess.DB, stmt, driver.QueryOptions{
 				RowCap:  maxRows,
 				TextCap: settings.TextCapChars,
 			})
-		} else {
-			rs, err = driver.Exec(qctx, sess.DB, stmt)
+			out.Results, out.MoreResults = sets, more
+			return err
 		}
-		return err
+		rs, err := driver.Exec(qctx, sess.DB, stmt)
+		if err != nil {
+			return err
+		}
+		out.Results = []*driver.ResultSet{rs}
+		return nil
 	}); err != nil {
 		return nil, err
 	}
-	return rs, nil
+	if out.Results == nil {
+		out.Results = []*driver.ResultSet{}
+	}
+	return out, nil
+}
+
+// batchReturnsRows is true when any statement in the text looks like it
+// returns rows. The split is only ever used for this decision — the batch is
+// always executed whole — so a split confused by exotic quoting costs nothing
+// worse than the classification that was there before.
+func batchReturnsRows(batch string) bool {
+	for _, stmt := range splitStatements(batch) {
+		if returnsRows(stmt) {
+			return true
+		}
+	}
+	return false
+}
+
+// splitStatements cuts a batch on semicolons that are not inside a string, a
+// quoted identifier or a comment.
+func splitStatements(batch string) []string {
+	var out []string
+	start := 0
+	for i := 0; i < len(batch); i++ {
+		switch batch[i] {
+		case ';':
+			out = append(out, batch[start:i])
+			start = i + 1
+		case '\'', '"', '`':
+			if end := closingQuote(batch, i, batch[i]); end > i {
+				i = end
+			}
+		case '[':
+			if end := closingQuote(batch, i, ']'); end > i {
+				i = end
+			}
+		case '-':
+			if strings.HasPrefix(batch[i:], "--") {
+				if nl := strings.IndexByte(batch[i:], '\n'); nl >= 0 {
+					i += nl
+				} else {
+					i = len(batch)
+				}
+			}
+		case '/':
+			if strings.HasPrefix(batch[i:], "/*") {
+				if end := strings.Index(batch[i+2:], "*/"); end >= 0 {
+					i += 2 + end + 1
+				} else {
+					i = len(batch)
+				}
+			}
+		}
+	}
+	return append(out, batch[min(start, len(batch)):])
+}
+
+// closingQuote finds the delimiter that closes the one at open. A doubled
+// delimiter is an escaped one and does not close anything, which is true of
+// ” in every dialect here and of "" and “ in the ones that use them.
+func closingQuote(s string, open int, closer byte) int {
+	for i := open + 1; i < len(s); i++ {
+		if s[i] != closer {
+			continue
+		}
+		if i+1 < len(s) && s[i+1] == closer {
+			i++
+			continue
+		}
+		return i
+	}
+	return len(s)
 }
 
 // returnsRows guesses from the leading keyword whether to use Query or Exec.
@@ -689,7 +913,9 @@ func trimLeadingNoise(s string) string {
 				return ""
 			}
 			s = s[end+2:]
-		case strings.HasPrefix(s, "("):
+		case strings.HasPrefix(s, "("), strings.HasPrefix(s, ";"):
+			// A leading semicolon is the T-SQL `;WITH cte AS (…)` idiom, which
+			// is a query and must not be Exec'd.
 			s = s[1:]
 		default:
 			return s

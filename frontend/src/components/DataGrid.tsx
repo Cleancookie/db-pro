@@ -1,5 +1,5 @@
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { isTypingTarget } from '../dom'
 import { inRect, rectOf, type CellPos, type Rect } from '../selection'
 import { useStore, type ResultSource } from '../store'
@@ -80,6 +80,12 @@ export function DataGrid({
   // Only this grid's own selection: the other result keeps its own, so
   // switching between the browser and the editor does not lose either.
   const selection = useStore((s) => (s.selection?.source === source ? s.selection : null))
+  const copyText = useStore((s) => s.copyText)
+  // Which header was right-clicked. One menu wraps the whole header strip — a
+  // Radix root per column would be one per column on a 200-column table — so
+  // it has to be told which column the event came from, the same arrangement
+  // the row area uses with the focused cell.
+  const [headerCol, setHeaderCol] = useState<number | null>(null)
   const selectCell = useStore((s) => s.selectCell)
   const extendSelection = useStore((s) => s.extendSelection)
   const clearSelection = useStore((s) => s.clearSelection)
@@ -277,58 +283,78 @@ export function DataGrid({
     )
   }
 
+  const headerName = headerCol === null ? undefined : meta[headerCol]?.name
+  const headerItems: MenuItem[] = [
+    {
+      label: 'Copy column name',
+      disabled: !headerName,
+      onSelect: () => headerName && void copyText(headerName),
+    },
+    {
+      label: 'Copy all column names',
+      onSelect: () => void copyText(meta.map((m) => m.name).join(', ')),
+    },
+  ]
+
   return (
     <div ref={scrollRef} className="h-full overflow-auto font-[var(--font-mono)]">
       <div style={{ width: totalWidth, minWidth: '100%' }}>
-        <div
-          className="chrome sticky top-0 z-10 flex border-b border-[var(--color-border-strong)] bg-[var(--color-panel)]"
-          style={{ height: gm.headerHeight }}
-        >
+        {/* One menu for the whole strip; each button says which column it is.
+            The buttons are never `disabled`, even with no sort to offer: a
+            disabled control dispatches no events, and the right-click would
+            never reach the menu. */}
+        <ContextMenu items={headerItems} heading={headerName}>
           <div
-            className="shrink-0 border-r border-[var(--color-border)]"
-            style={{ width: gm.gutter }}
-            aria-hidden
-          />
-          {meta.map((m, i) => {
-            const active = sort?.column === m.name
-            return (
-              <button
-                key={`${m.name}-${i}`}
-                onClick={() => onSort?.(m.name)}
-                disabled={!onSort}
-                title={`${m.name}${m.column ? ` · ${m.column.dataType}` : ''}${
-                  m.column?.primaryKey ? ' · primary key' : ''
-                }`}
-                className={`flex shrink-0 items-center gap-1 border-r border-[var(--color-border)] px-2 text-left ${
-                  onSort ? 'hover:bg-[var(--color-elevated)]' : 'cursor-default'
-                }`}
-                style={{ width: widths[i] }}
-              >
-                {m.column?.primaryKey && (
-                  // A text badge rather than a key glyph: symbol fonts vary
-                  // wildly across the platforms this ships to, and a tofu box
-                  // next to a column name reads as corruption.
-                  <span
-                    className="shrink-0 rounded-sm bg-[var(--color-warn)]/20 px-1 font-semibold text-[var(--color-warn)]"
-                    title="primary key"
-                  >
-                    PK
-                  </span>
-                )}
-                <span
-                  className={`truncate ${active ? 'text-[var(--color-accent)]' : 'text-[var(--color-text)]'}`}
+            className="chrome sticky top-0 z-10 flex border-b border-[var(--color-border-strong)] bg-[var(--color-panel)]"
+            style={{ height: gm.headerHeight }}
+          >
+            <div
+              className="shrink-0 border-r border-[var(--color-border)]"
+              style={{ width: gm.gutter }}
+              aria-hidden
+            />
+            {meta.map((m, i) => {
+              const active = sort?.column === m.name
+              return (
+                <button
+                  key={`${m.name}-${i}`}
+                  type="button"
+                  onClick={() => onSort?.(m.name)}
+                  onContextMenu={() => setHeaderCol(i)}
+                  title={`${m.name}${m.column ? ` · ${m.column.dataType}` : ''}${
+                    m.column?.primaryKey ? ' · primary key' : ''
+                  }`}
+                  className={`flex shrink-0 items-center gap-1 border-r border-[var(--color-border)] px-2 text-left ${
+                    onSort ? 'hover:bg-[var(--color-elevated)]' : 'cursor-default'
+                  }`}
+                  style={{ width: widths[i] }}
                 >
-                  {m.name}
-                </span>
-                {active && (
-                  <span className="ml-auto shrink-0 text-[var(--color-accent)]">
-                    {sort.desc ? '▾' : '▴'}
+                  {m.column?.primaryKey && (
+                    // A text badge rather than a key glyph: symbol fonts vary
+                    // wildly across the platforms this ships to, and a tofu box
+                    // next to a column name reads as corruption.
+                    <span
+                      className="shrink-0 rounded-sm bg-[var(--color-warn)]/20 px-1 font-semibold text-[var(--color-warn)]"
+                      title="primary key"
+                    >
+                      PK
+                    </span>
+                  )}
+                  <span
+                    className={`truncate ${active ? 'text-[var(--color-accent)]' : 'text-[var(--color-text)]'}`}
+                  >
+                    {m.name}
                   </span>
-                )}
-              </button>
-            )
-          })}
-        </div>
+                  {active && (
+                    <span className="ml-auto shrink-0 text-[var(--color-accent)]">
+                      {sort.desc ? '▾' : '▴'}
+                    </span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+        </ContextMenu>
 
         {/* The menu wraps the row area only: the header has its own meaning
             for a click, and a cell menu over it would act on a cell that is

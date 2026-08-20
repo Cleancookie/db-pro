@@ -237,6 +237,46 @@ SQL Server's `OFFSET/FETCH` requires an `ORDER BY`. When the user has not chosen
 sort, the mssql driver falls back to ordering by the primary key, then by the first
 column, so pagination stays stable.
 
+### Schema changes
+
+`BuildTruncate`, `BuildDrop` and `BuildCreateTable` are the three statements the
+object menu can run, and they are on `Driver` for the same reason everything else
+is: the wording differs per dialect, and the differences are not cosmetic.
+
+| | MySQL/MariaDB | PostgreSQL | SQL Server | SQLite |
+| --- | --- | --- | --- | --- |
+| Empty a table | `TRUNCATE TABLE` | `TRUNCATE TABLE` | `TRUNCATE TABLE` | no `TRUNCATE` — `DELETE FROM` |
+| `CREATE` across databases | qualified name works | n/a, one DB per connection | must be the *current* database | n/a |
+| Identity column | `bigint AUTO_INCREMENT` | `bigserial` | `bigint IDENTITY(1,1)` | `INTEGER PRIMARY KEY` |
+
+Two of those need explaining.
+
+SQLite's `DELETE FROM` is not a `TRUNCATE` in disguise — it fires triggers and it
+rolls back. `Capabilities.TruncateIsDelete` exists so the confirmation dialog can
+say which statement it is about to run, and `ddl_test.go` asserts the flag and the
+statement agree.
+
+SQL Server accepts a database qualifier on `CREATE TABLE` only when it names the
+current database, but this driver reaches other databases by qualifying rather
+than by switching — so a three-part `CREATE` fails on exactly the case the
+sidebar makes easy. The statement is sent through the target database's own
+`sp_executesql` instead. A `USE` prefix would also work, and would leave the
+pooled connection pointing at a different database for whoever picked it up next
+— the same trap described above.
+
+The portable half lives in `internal/driver/ddl.go`: a column list and a
+table-level `PRIMARY KEY`, so a composite key needs no special case. Column types
+and defaults are raw fragments, like the filter (`docs/adr/0002`), guarded only
+against a semicolon or a comment so a typo cannot append a second statement.
+
+Nothing here emits `CASCADE`. Postgres refusing to truncate a referenced table is
+the useful answer; a menu item that quietly empties tables the user did not name
+is not.
+
+The frontend never assembles DDL. `PreviewCreateTable` asks the driver to render
+the statement without running it, so the SQL shown in the dialog is produced by
+the same code that will execute it.
+
 ## Row browsing and the filter box
 
 `Ctrl+F` is a raw SQL fragment appended after `WHERE`. It is **not** escaped or

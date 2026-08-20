@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { editorCandidates, tokenAt } from '../completion'
-import { useActiveKind, useHasSchemas, useStore } from '../store'
+import { activeSqlResult, useActiveKind, useHasSchemas, useStore } from '../store'
 import { Editor } from '../ui'
 import { useCellMenu } from './CellMenu'
 import { DataGrid } from './DataGrid'
@@ -17,7 +17,11 @@ export function SqlEditor() {
   const sqlText = useStore((s) => s.sqlText)
   const setSqlText = useStore((s) => s.setSqlText)
   const runSql = useStore((s) => s.runSql)
-  const sqlResult = useStore((s) => s.sqlResult)
+  const sqlResults = useStore((s) => s.sqlResults)
+  const sqlResultIndex = useStore((s) => s.sqlResultIndex)
+  const moreSqlResults = useStore((s) => s.moreSqlResults)
+  const selectSqlResult = useStore((s) => s.selectSqlResult)
+  const sqlResult = useStore(activeSqlResult)
   const busy = useStore((s) => s.busy)
   const setView = useStore((s) => s.setView)
   const openCell = useStore((s) => s.openCell)
@@ -85,6 +89,40 @@ export function SqlEditor() {
           className="p-3 leading-relaxed"
         />
       </div>
+
+      {/* One tab per result set. A batch is one round trip that can answer
+          several times over, and before this the later answers were dropped
+          on the floor. Hidden for the single result that most runs produce. */}
+      {sqlResults.length > 1 && (
+        <div className="chrome flex shrink-0 items-center gap-1 overflow-x-auto border-b border-[var(--color-border)] bg-[var(--color-panel)] px-2 py-1">
+          {sqlResults.map((r, i) => (
+            <button
+              key={i}
+              onClick={() => selectSqlResult(i)}
+              title={r.query}
+              className={`shrink-0 rounded px-2 py-0.5 ${
+                i === sqlResultIndex
+                  ? 'bg-[var(--color-elevated)] text-[var(--color-accent)]'
+                  : 'text-[var(--color-muted)] hover:bg-[var(--color-elevated)]'
+              }`}
+            >
+              Result {i + 1}{' '}
+              <span className="text-[var(--color-faint)]">
+                {r.rows.length}
+                {r.truncated ? '+' : ''}
+              </span>
+            </button>
+          ))}
+          {moreSqlResults && (
+            <span
+              className="shrink-0 px-2 text-[var(--color-warn)]"
+              title="The batch produced more result sets than are shown"
+            >
+              more not shown
+            </span>
+          )}
+        </div>
+      )}
 
       <div className="min-h-0 flex-1">
         {sqlResult ? (

@@ -29,6 +29,12 @@ func (postgresDriver) Caps() Capabilities {
 		DatabasePerConnection: true,
 		SupportsFunctions:     true,
 		DefaultPort:           5432,
+		CommonTypes: []string{
+			"bigserial", "serial", "integer", "bigint", "boolean",
+			"text", "varchar(255)", "jsonb", "uuid",
+			"numeric(10,2)", "double precision",
+			"date", "timestamptz", "timestamp", "interval", "bytea",
+		},
 	}
 }
 
@@ -231,6 +237,23 @@ func (d postgresDriver) BuildSelect(ref ObjectRef, opts ReadOptions, cols []Colu
 
 func (d postgresDriver) BuildCount(ref ObjectRef, filter string) string {
 	return "SELECT count(*) FROM " + d.target(ref) + whereClause(filter)
+}
+
+// BuildTruncate deliberately omits CASCADE. Postgres refuses to truncate a table
+// another table references, and the right answer to that is to read the error and
+// decide — not to have the menu quietly empty tables the user never named.
+func (d postgresDriver) BuildTruncate(ref ObjectRef) (string, error) {
+	return "TRUNCATE TABLE " + d.target(ref), nil
+}
+
+// BuildDrop is RESTRICT by default, for the same reason: a view built on the
+// table blocks the drop, which is information rather than an obstacle.
+func (d postgresDriver) BuildDrop(ref ObjectRef, typ ObjectType) (string, error) {
+	return buildDrop(d.target(ref), typ)
+}
+
+func (d postgresDriver) BuildCreateTable(spec CreateTableSpec) (string, error) {
+	return buildCreateTable(d, d.target(spec.Ref), spec)
 }
 
 // DescribeObject reads pg_catalog rather than information_schema throughout,

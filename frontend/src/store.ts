@@ -10,9 +10,11 @@ import type {
   Cell,
   Column,
   Connection,
+  CreateTableSpec,
   Kind,
   ObjectDetail,
   ObjectRef,
+  ObjectType,
   ResultSet,
   SchemaObject,
   Settings,
@@ -50,6 +52,9 @@ export type DialogState =
   | { kind: 'confirmDelete'; connection: Connection }
   | { kind: 'cell'; cell: CellTarget }
   | { kind: 'confirmCancel'; queryId: string; sql: string }
+  | { kind: 'confirmTruncate'; ref: ObjectRef }
+  | { kind: 'confirmDrop'; ref: ObjectRef; type: ObjectType }
+  | { kind: 'newTable'; schema: string }
 
 /** Which grid a cell came from, since only the browse grid can re-read it. */
 export type ResultSource = 'browse' | 'sql'
@@ -113,6 +118,13 @@ interface State {
   columns: Column[]
   result: ResultSet | null
   orderBy: Sort[]
+  /**
+   * Whether the sort above is the user's doing. False until they touch a
+   * header, which is what lets a freshly opened table default to primary key
+   * descending while an empty sort they cycled to themselves stays empty. The
+   * server is told which of the two an empty orderBy is.
+   */
+  sortChosen: boolean
 
   // filter (Ctrl+F) — raw SQL after WHERE
   filter: string
@@ -126,7 +138,16 @@ interface State {
 
   // sql editor
   sqlText: string
-  sqlResult: ResultSet | null
+  /**
+   * Every result set the last run produced, in order. A batch is one round
+   * trip that can answer several times over — `use other_db; select …` — and
+   * the editor puts a tab on each. Empty until something has been run.
+   */
+  sqlResults: ResultSet[]
+  /** Which of them the editor is showing. */
+  sqlResultIndex: number
+  /** The run produced more result sets than were kept — see MaxResultSets. */
+  moreSqlResults: boolean
 
   // table details page
   detail: ObjectDetail | null
@@ -203,6 +224,27 @@ interface State {
    * be worse than a second of loading.
    */
   openDetails: (ref: ObjectRef) => Promise<void>
+
+  /**
+   * The three schema changes, each in two halves.
+   *
+   * The `truncateTable` / `dropObject` / `newTable` half is the *action* — what
+   * the palette entry and the context-menu item both fire, and the only half a
+   * caller should reach for. It decides whether a confirmation is owed, which is
+   * a question about settings that no call site should have to re-ask.
+   *
+   * The `run…` half is what the confirmation dialog calls once the user has said
+   * yes. Nothing else should call it: doing so is how a destructive statement
+   * ends up with no confirmation on one route and one on another.
+   */
+  truncateTable: (ref: ObjectRef) => Promise<void>
+  runTruncate: (ref: ObjectRef) => Promise<void>
+  dropObject: (ref: ObjectRef, type: ObjectType) => Promise<void>
+  runDrop: (ref: ObjectRef, type: ObjectType) => Promise<void>
+  /** Opens the new-table dialog. `schema` is a default, not a constraint. */
+  newTable: (schema?: string) => void
+  createTable: (spec: CreateTableSpec) => Promise<void>
+
   toggleSection: (k: SectionKey) => void
   loadSettings: () => Promise<void>
   saveSettings: (s: Settings) => Promise<void>
@@ -212,6 +254,8 @@ interface State {
   setTrayOpen: (open: boolean) => void
   setSqlText: (t: string) => void
   runSql: () => Promise<void>
+  /** Switches result tabs. The selection goes with the old one. */
+  selectSqlResult: (index: number) => void
   saveConnection: (c: Connection, password: string | null) => Promise<void>
   deleteConnection: (id: string) => Promise<void>
   setPalette: (mode: PaletteMode | null) => void
@@ -262,7 +306,7 @@ export const useStore = create<State>((set, get) => {
     if (!s.activeConnectionId || !s.activeRef) return
 
     const seq = ++requestSeq
-    const { activeConnectionId, activeRef, filter, orderBy } = s
+    const { activeConnectionId, activeRef, filter, orderBy, sortChosen } = s
     set({ busy: true })
 
     try {
@@ -272,6 +316,7 @@ export const useStore = create<State>((set, get) => {
           ref: activeRef,
           filter,
           orderBy,
+          applyDefaultSort: !sortChosen,
           pagination: {
             enabled: s.paginationEnabled,
             page: s.page,
@@ -283,6 +328,13 @@ export const useStore = create<State>((set, get) => {
       set({
         result: res.result,
         columns: res.columns,
+        // A table opened without a sort gets the server's default — primary
+        // key descending. Adopting it here is what marks the header and what
+        // gives the next header click something to cycle on from. sortChosen
+        // stays false: this is still not the user's choice.
+        ...(!sortChosen && orderBy.length === 0 && res.orderBy?.length
+          ? { orderBy: res.orderBy }
+          : {}),
         hasMore: res.hasMore,
         busy: false,
       })
@@ -331,6 +383,7 @@ export const useStore = create<State>((set, get) => {
     columns: [],
     result: null,
     orderBy: [],
+    sortChosen: false,
     filter: '',
     paginationEnabled: true,
     page: 1,
@@ -338,7 +391,9 @@ export const useStore = create<State>((set, get) => {
     hasMore: false,
     totalCount: null,
     sqlText: '',
-    sqlResult: null,
+    sqlResults: [],
+    sqlResultIndex: 0,
+    moreSqlResults: false,
     detail: null,
     detailLoading: false,
     detailError: null,
@@ -479,6 +534,7 @@ export const useStore = create<State>((set, get) => {
         // table over would almost always be a syntax error.
         filter: '',
         orderBy: [],
+        sortChosen: false,
         page: 1,
         totalCount: null,
         result: null,
@@ -524,13 +580,17 @@ export const useStore = create<State>((set, get) => {
       if (!current || current.column !== column) orderBy = [{ column, desc: false }]
       else if (!current.desc) orderBy = [{ column, desc: true }]
       else orderBy = [] // third click clears the sort
-      set({ orderBy, page: 1 })
+      // From here on an empty sort means the user emptied it, so the default is
+      // not put back. A table that opened on its primary key descending is one
+      // click from unsorted, and the cycle from there is the plain
+      // none → ascending → descending.
+      set({ orderBy, sortChosen: true, page: 1 })
       await fetchRows()
     },
 
     async clearSort() {
-      if (get().orderBy.length === 0) return
-      set({ orderBy: [], page: 1 })
+      if (get().orderBy.length === 0 && get().sortChosen) return
+      set({ orderBy: [], sortChosen: true, page: 1 })
       await fetchRows()
     },
 
@@ -544,6 +604,89 @@ export const useStore = create<State>((set, get) => {
       } catch (e) {
         set({ detailError: String(e), detailLoading: false })
       }
+    },
+
+    async truncateTable(ref) {
+      if (get().settings.confirmDestructive) set({ dialog: { kind: 'confirmTruncate', ref } })
+      else await get().runTruncate(ref)
+    },
+
+    async runTruncate(ref) {
+      const s = get()
+      if (!s.activeConnectionId) return
+      const connectionId = s.activeConnectionId
+      set({ dialog: { kind: 'none' } })
+      try {
+        await tracked(() => api.truncateTable({ connectionId, ref }))
+        s.pushToast('info', `Emptied ${refLabel(ref)}`)
+      } catch (e) {
+        s.pushToast('error', errorMessage(e))
+        return
+      }
+      // The row count in the sidebar is now wrong, and so is the grid if this is
+      // the table on screen.
+      await get().selectDatabase(get().activeDatabase)
+      if (sameRef(get().activeRef, ref)) await fetchRows()
+    },
+
+    async dropObject(ref, type) {
+      if (get().settings.confirmDestructive) set({ dialog: { kind: 'confirmDrop', ref, type } })
+      else await get().runDrop(ref, type)
+    },
+
+    async runDrop(ref, type) {
+      const s = get()
+      if (!s.activeConnectionId) return
+      const connectionId = s.activeConnectionId
+      set({ dialog: { kind: 'none' } })
+      try {
+        await tracked(() => api.dropObject({ connectionId, ref, type }))
+        s.pushToast('info', `Dropped ${refLabel(ref)}`)
+      } catch (e) {
+        s.pushToast('error', errorMessage(e))
+        return
+      }
+      // Leaving the grid pointed at something that no longer exists would make
+      // every refresh an error, so the view goes back to nothing selected.
+      if (sameRef(get().activeRef, ref)) {
+        set({
+          activeRef: null,
+          result: null,
+          columns: [],
+          filter: '',
+          orderBy: [],
+          sortChosen: false,
+          totalCount: null,
+          selection: null,
+          view: 'data',
+        })
+      }
+      set({ recentObjects: get().recentObjects.filter((k) => k !== refKey(ref.database, ref.schema, ref.name)) })
+      await get().selectDatabase(get().activeDatabase)
+    },
+
+    newTable(schema) {
+      set({ dialog: { kind: 'newTable', schema: schema ?? '' } })
+    },
+
+    async createTable(spec) {
+      const s = get()
+      if (!s.activeConnectionId) return
+      const connectionId = s.activeConnectionId
+      try {
+        await tracked(() => api.createTable({ connectionId, spec }))
+      } catch (e) {
+        // The dialog stays open: the error is almost always a type the engine
+        // did not accept, and closing would throw away the whole definition.
+        s.pushToast('error', errorMessage(e))
+        return
+      }
+      set({ dialog: { kind: 'none' } })
+      s.pushToast('info', `Created ${refLabel(spec.ref)}`)
+      await get().selectDatabase(get().activeDatabase)
+      // Opening it is the point of having made it, and an empty grid with the
+      // new columns across the top is the quickest confirmation it is right.
+      await get().openObject({ schema: spec.ref.schema, name: spec.ref.name, type: 'table' })
     },
 
     setView(view) {
@@ -573,7 +716,7 @@ export const useStore = create<State>((set, get) => {
     },
 
     selectAll(source) {
-      const rs = source === 'sql' ? get().sqlResult : get().result
+      const rs = source === 'sql' ? activeSqlResult(get()) : get().result
       if (!rs || rs.rows.length === 0 || rs.columns.length === 0) return
       set({
         selection: {
@@ -592,7 +735,7 @@ export const useStore = create<State>((set, get) => {
       const s = get()
       const sel = s.selection
       if (!sel) return
-      const rs = sel.source === 'sql' ? s.sqlResult : s.result
+      const rs = sel.source === 'sql' ? activeSqlResult(s) : s.result
       if (!rs) return
 
       // Clamped, because a result can be replaced under a selection — a smaller
@@ -718,14 +861,33 @@ export const useStore = create<State>((set, get) => {
             maxRows: 0,
           }),
         )
-        set({ sqlResult: res, busy: false })
-        if (res.rowsAffected != null) {
-          s.pushToast('info', `${res.rowsAffected} row(s) affected in ${res.elapsedMs}ms`)
+        set({
+          sqlResults: res.results,
+          sqlResultIndex: 0,
+          moreSqlResults: res.moreResults,
+          // The old result's selection means nothing against the new one.
+          selection: s.selection?.source === 'sql' ? null : s.selection,
+          busy: false,
+        })
+        // Only a statement with nothing to show says how many rows it moved.
+        // With a grid on screen the row count is already in front of the user.
+        const only = res.results.length === 1 ? res.results[0] : null
+        if (only && only.rowsAffected != null) {
+          s.pushToast('info', `${only.rowsAffected} row(s) affected in ${only.elapsedMs}ms`)
         }
       } catch (e) {
         set({ busy: false })
         get().pushToast('error', errorMessage(e))
       }
+    },
+
+    selectSqlResult(index) {
+      const s = get()
+      if (index < 0 || index >= s.sqlResults.length || index === s.sqlResultIndex) return
+      set({
+        sqlResultIndex: index,
+        selection: s.selection?.source === 'sql' ? null : s.selection,
+      })
     },
 
     async saveConnection(connection, password) {
@@ -759,7 +921,7 @@ export const useStore = create<State>((set, get) => {
 
     cellTarget(source, rowIndex, colIndex) {
       const s = get()
-      const rs = source === 'sql' ? s.sqlResult : s.result
+      const rs = source === 'sql' ? activeSqlResult(s) : s.result
       if (!rs) return null
       const column = rs.columns[colIndex]
       const value = rs.rows[rowIndex]?.[colIndex]
@@ -803,6 +965,7 @@ export const useStore = create<State>((set, get) => {
             column: cell.column,
             filter: s.filter,
             orderBy: s.orderBy,
+            applyDefaultSort: !s.sortChosen,
             rowOffset: cell.rowOffset,
           })
           text = res.value ?? ''
@@ -842,6 +1005,21 @@ export const useStore = create<State>((set, get) => {
 })
 
 /**
+ * How an object is named in a toast or a confirmation.
+ *
+ * Deliberately not commands.ts's qualifiedName, which this would otherwise
+ * reuse: commands.ts imports values from this file, so importing back would
+ * close a cycle for the sake of one string join.
+ */
+export function refLabel(ref: ObjectRef): string {
+  return ref.schema ? `${ref.schema}.${ref.name}` : ref.name
+}
+
+function sameRef(a: ObjectRef | null, b: ObjectRef): boolean {
+  return !!a && a.database === b.database && a.schema === b.schema && a.name === b.name
+}
+
+/**
  * The dialect of the active connection, or null when nothing is connected.
  *
  * Derived rather than stored: the connection list is already the source of
@@ -850,6 +1028,17 @@ export const useStore = create<State>((set, get) => {
  */
 export function useActiveKind(): Kind | null {
   return useStore((s) => s.connections.find((c) => c.id === s.activeConnectionId)?.kind ?? null)
+}
+
+/**
+ * The result set the editor is showing, or null before anything has run.
+ *
+ * Derived rather than stored beside the list: a copy of the active result
+ * would be a second thing to keep in step with the tab index, and the two
+ * drifting is exactly the bug that would show the wrong grid.
+ */
+export function activeSqlResult(s: State): ResultSet | null {
+  return s.sqlResults[s.sqlResultIndex] ?? null
 }
 
 /** Whether the active dialect has schemas, so names are worth qualifying. */

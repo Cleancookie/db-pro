@@ -17,6 +17,7 @@ const KIND_LABEL: Record<QueryKind, string> = {
   count: 'count',
   query: 'editor',
   introspect: 'catalogue',
+  ddl: 'schema',
 }
 
 /**

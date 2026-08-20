@@ -12,11 +12,14 @@ import type {
   Column,
   Connection,
   ConnectResult,
+  CreateTableSpec,
   Kind,
   ObjectDetail,
   ObjectRef,
+  ObjectType,
   Pagination,
   ReadRowsResult,
+  RunSQLResult,
   ResultSet,
   SaveConnectionRequest,
   SchemaObject,
@@ -118,6 +121,8 @@ export const api = {
     ref: ObjectRef
     filter: string
     orderBy: Sort[]
+    /** Fill an empty orderBy with the table's default sort — see the store. */
+    applyDefaultSort: boolean
     pagination: Pagination
   }) => call<ReadRowsResult>('ReadRows', [req], req),
 
@@ -133,6 +138,7 @@ export const api = {
     column: string
     filter: string
     orderBy: Sort[]
+    applyDefaultSort: boolean
     rowOffset: number
   }) => call<CellValue>('ReadCell', [req], req),
 
@@ -140,7 +146,23 @@ export const api = {
     call<number>('CountRows', [req], req),
 
   runSql: (req: { connectionId: string; database: string; sql: string; maxRows: number }) =>
-    call<ResultSet>('RunSQL', [req], req),
+    call<RunSQLResult>('RunSQL', [req], req),
+
+  /** Empties a table — a DELETE on SQLite. See capabilities.truncateIsDelete. */
+  truncateTable: (req: { connectionId: string; ref: ObjectRef }) =>
+    call<ResultSet>('TruncateTable', [req], req),
+
+  /** Drops a table or view. Functions and procedures are refused by the driver. */
+  dropObject: (req: { connectionId: string; ref: ObjectRef; type: ObjectType }) =>
+    call<ResultSet>('DropObject', [req], req),
+
+  createTable: (req: { connectionId: string; spec: CreateTableSpec }) =>
+    call<ResultSet>('CreateTable', [req], req),
+
+  /** The statement createTable would run, for the dialog to show. Runs nothing,
+   *  needs no open connection, and is not logged as activity. */
+  previewCreateTable: (req: { connectionId: string; spec: CreateTableSpec }) =>
+    call<string>('PreviewCreateTable', [req], req),
 
   getSettings: () => call<Settings>('GetSettings', [], {}),
 

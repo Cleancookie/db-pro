@@ -24,6 +24,7 @@ export function CellDialog({ cell }: { cell: CellTarget }) {
   const activeRef = useStore((s) => s.activeRef)
   const filter = useStore((s) => s.filter)
   const orderBy = useStore((s) => s.orderBy)
+  const sortChosen = useStore((s) => s.sortChosen)
 
   const [full, setFull] = useState<string | null>(null)
   const [bytes, setBytes] = useState<number | null>(null)
@@ -50,6 +51,7 @@ export function CellDialog({ cell }: { cell: CellTarget }) {
           // the row offset addresses a different row.
           filter,
           orderBy,
+          applyDefaultSort: !sortChosen,
           rowOffset,
         })
         if (cancelled) return
@@ -68,7 +70,7 @@ export function CellDialog({ cell }: { cell: CellTarget }) {
     // Keyed on the cell alone on purpose: the filter and sort cannot change
     // while a modal is open, so re-running this when they are re-read from the
     // store would only refetch the same value.
-  }, [cell, fetchable, connectionId, activeRef, filter, orderBy])
+  }, [cell, fetchable, connectionId, activeRef, filter, orderBy, sortChosen])
 
   const text = full ?? (cell.value === null ? '' : String(cell.value))
   const isNull = cell.value === null && full === null

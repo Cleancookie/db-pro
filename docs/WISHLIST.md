@@ -47,6 +47,41 @@ monitoring connection open for connections nobody is querying.
 
 ---
 
+## 2. `ALTER` — change a table that already exists
+
+The object menu can create a table, empty it and drop it. It cannot change one.
+Adding a column, renaming one, retyping one, adding or dropping an index or a
+foreign key all still mean writing the statement in the SQL editor.
+
+This was left out deliberately rather than forgotten. `CREATE TABLE` is close to
+portable across the four dialects — a column list and a table-level primary key
+covers it — and `ALTER` is not:
+
+- SQLite has no `ALTER COLUMN` at all. Changing a type means creating a new
+  table, copying the rows, dropping the old one and renaming, inside a
+  transaction, with the indexes and triggers rebuilt afterwards. `ALTER TABLE …
+  RENAME COLUMN` exists but only since 3.25.
+- MySQL wants the whole new column definition in `MODIFY COLUMN`, so an edit
+  needs everything `DescribeObject` returns and must round-trip it exactly, or
+  the change silently drops a default or a collation.
+- Postgres separates `TYPE`, `SET DEFAULT`, `DROP DEFAULT` and
+  `SET NOT NULL` into different clauses and needs `USING` for a cast it cannot
+  infer.
+- SQL Server refuses `ALTER COLUMN` outright on a column with an index,
+  constraint or default on it — those have to come off first and go back after.
+
+So it is not one feature but four, and the interesting half is the diff: taking
+the table as it is, the table as the user has edited it in a form, and working
+out the shortest correct sequence of statements per dialect. Worth doing with
+the details page as the starting point — it already reads every fact the diff
+would need.
+
+Whatever it turns into, it should keep the two rules the create path settled:
+the statements are built by the driver and shown before they run, and the action
+is in the palette before it is in a menu.
+
+---
+
 ## Built since
 
 - **Manual page size** — a free-text page size beside the presets, as a one-off
@@ -61,6 +96,9 @@ monitoring connection open for connections nobody is querying.
 - **The activity tray** — always-visible bottom drawer, query ids, instrumented
   lifecycle status, ticking timers, cancel-with-confirmation, and a bounded
   query log. See `ARCHITECTURE.md` ("The activity tray").
+- **Schema changes from the object menu** — create a table, empty it, drop it,
+  each a palette action the right-click menu also fires. Statements are built
+  per dialect in `internal/driver/ddl.go`. `ALTER` is item 2 above.
 
 All five are recorded in full, request verbatim and decisions taken, in
 `REQUIREMENTS.md` under 2026-08-17.
