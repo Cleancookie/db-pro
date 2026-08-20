@@ -53,7 +53,7 @@ export function FilterBar() {
   )
 
   return (
-    <div className="chrome flex items-center gap-2 border-b border-[var(--color-border)] bg-[var(--color-panel)] px-3 py-1.5">
+    <div className="chrome flex items-center gap-2.5 border-b border-[var(--color-border)] bg-[var(--color-panel)]/70 px-3 py-2">
       {/* The open table's name. It used to live in the top bar; with that gone
           this is the row that is always above the grid, and the name belongs
           next to the filter that applies to it. */}
@@ -84,18 +84,18 @@ export function FilterBar() {
         completion={completion}
         placeholder="status = 'active' and created_at > now() - interval '7 days'"
         ariaLabel="Row filter, raw SQL after WHERE"
-        className={`min-w-0 flex-1 rounded border bg-[var(--color-elevated)] px-2 py-1 ${
-          dirty ? 'border-[var(--color-warn)]' : 'border-[var(--color-border-strong)]'
+        className={`min-w-0 flex-1 rounded-xl border bg-[var(--color-elevated)] px-3 py-1 shadow-xs ${
+          dirty ? 'border-[var(--color-warn)]' : 'border-[var(--color-border)]'
         }`}
       />
       {dirty && (
-        <span className="shrink-0 text-[var(--color-warn)]">Enter to apply</span>
+        <span className="shrink-0 rounded-full bg-[var(--color-warn)]/15 px-2 py-0.5 font-semibold text-[var(--color-warn)]">Enter to apply</span>
       )}
       {filter && !dirty && (
         <button
           onClick={() => void applyFilter('')}
           title="Clear filter"
-          className="shrink-0 rounded px-1.5 text-[var(--color-muted)] hover:bg-[var(--color-elevated)] hover:text-[var(--color-text)]"
+          className="shrink-0 rounded-full px-2 text-[var(--color-muted)] hover:bg-[var(--color-danger)]/15 hover:text-[var(--color-danger)]"
         >
           ✕
         </button>

@@ -17,10 +17,10 @@ export function Toasts() {
         <div
           key={t.id}
           role={t.kind === 'error' ? 'alert' : 'status'}
-          className={`pointer-events-auto flex items-start gap-2 rounded border px-3 py-2 shadow-lg ${
+          className={`animate-slide-in pointer-events-auto flex items-start gap-2 rounded-2xl border px-4 py-3 shadow-lg ${
             t.kind === 'error'
-              ? 'border-[var(--color-danger)]/50 bg-[#2a1b1b]'
-              : 'border-[var(--color-border-strong)] bg-[var(--color-elevated)]'
+              ? 'border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10'
+              : 'border-[var(--color-border)] bg-[var(--color-elevated)]'
           }`}
         >
           <span
@@ -35,7 +35,7 @@ export function Toasts() {
             onClick={() => dismiss(t.id)}
             aria-label="Dismiss"
             title="Dismiss"
-            className="shrink-0 rounded px-1 text-[var(--color-muted)] hover:text-[var(--color-text)]"
+            className="shrink-0 rounded-lg px-1 text-[var(--color-muted)] hover:text-[var(--color-text)]"
           >
             ✕
           </button>
@@ -77,7 +77,7 @@ export function CopyButton({ text, label = 'Copy' }: { text: string; label?: str
       onClick={() => void copy()}
       aria-label={`${label} to clipboard`}
       title={`${label} to clipboard`}
-      className="shrink-0 rounded border border-[var(--color-border-strong)] px-1.5 py-0.5 text-[var(--color-muted)] hover:border-[var(--color-accent)] hover:text-[var(--color-text)]"
+      className="shrink-0 rounded-lg border border-[var(--color-border-strong)] px-1.5 py-0.5 text-[var(--color-muted)] hover:border-[var(--color-accent)] hover:text-[var(--color-text)]"
     >
       {copied ? 'Copied' : label}
     </button>

@@ -20,7 +20,7 @@ export function ActivityPage() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="chrome flex items-center gap-2 border-b border-[var(--color-border)] bg-[var(--color-panel)] px-3 py-1.5">
+      <div className="chrome flex items-center gap-2 border-b border-[var(--color-border)] bg-[var(--color-panel)]/70 px-3 py-2">
         <span className="font-semibold tracking-wider text-[var(--color-faint)] uppercase">
           Connections
         </span>
@@ -36,7 +36,7 @@ export function ActivityPage() {
         </button>
         <button
           onClick={() => setView('data')}
-          className="ml-auto rounded px-1.5 text-[var(--color-muted)] hover:bg-[var(--color-elevated)] hover:text-[var(--color-text)]"
+          className="ml-auto rounded-lg px-1.5 text-[var(--color-muted)] hover:bg-[var(--color-elevated)] hover:text-[var(--color-text)]"
           title="Close"
         >
           ✕
@@ -48,7 +48,7 @@ export function ActivityPage() {
           Open connections
         </h3>
         {activity.sessions.length === 0 ? (
-          <p className="rounded border border-[var(--color-border)] px-3 py-4 text-center text-[var(--color-faint)]">
+          <p className="rounded-lg border border-[var(--color-border)] px-3 py-4 text-center text-[var(--color-faint)]">
             No open connections
           </p>
         ) : (
@@ -94,7 +94,7 @@ export function ActivityPage() {
                   <td className="border-b border-[var(--color-border)] py-1.5 text-right">
                     <button
                       onClick={() => void disconnect(s.connectionId)}
-                      className="rounded border border-[var(--color-border-strong)] px-2 py-0.5 hover:border-[var(--color-danger)] hover:text-[var(--color-danger)]"
+                      className="rounded-lg border border-[var(--color-border-strong)] px-2 py-0.5 hover:border-[var(--color-danger)] hover:text-[var(--color-danger)]"
                     >
                       Disconnect
                     </button>

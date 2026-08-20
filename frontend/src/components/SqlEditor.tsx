@@ -43,7 +43,7 @@ export function SqlEditor() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="chrome flex items-center gap-2 border-b border-[var(--color-border)] bg-[var(--color-panel)] px-3 py-1.5">
+      <div className="chrome flex items-center gap-2 border-b border-[var(--color-border)] bg-[var(--color-panel)]/70 px-3 py-2">
         <span className="font-semibold tracking-wider text-[var(--color-faint)] uppercase">
           SQL
         </span>
@@ -53,7 +53,7 @@ export function SqlEditor() {
         {activeDatabase && (
           <span
             title="Statements run against this database — chosen in the sidebar"
-            className="max-w-[12rem] truncate rounded bg-[var(--color-elevated)] px-1.5 py-0.5 font-[var(--font-mono)] text-[var(--color-muted)]"
+            className="max-w-[12rem] truncate rounded-lg bg-[var(--color-elevated)] px-1.5 py-0.5 font-[var(--font-mono)] text-[var(--color-muted)]"
           >
             {activeDatabase}
           </span>
@@ -61,13 +61,13 @@ export function SqlEditor() {
         <button
           onClick={() => void runSql()}
           disabled={busy || !sqlText.trim()}
-          className="rounded border border-[var(--color-border-strong)] bg-[var(--color-elevated)] px-2 py-0.5 disabled:opacity-40 enabled:hover:border-[var(--color-accent)]"
+          className="rounded-full border border-[var(--color-border-strong)] bg-[var(--color-elevated)] px-3 py-0.5 font-semibold shadow-xs disabled:opacity-40 enabled:hover:border-[var(--color-accent)] enabled:hover:bg-[var(--color-accent-dim)]/30"
         >
           Run <span className="text-[var(--color-faint)]">Ctrl+Enter</span>
         </button>
         <button
           onClick={() => setView('data')}
-          className="ml-auto rounded px-1.5 text-[var(--color-muted)] hover:bg-[var(--color-elevated)] hover:text-[var(--color-text)]"
+          className="ml-auto rounded-lg px-1.5 text-[var(--color-muted)] hover:bg-[var(--color-elevated)] hover:text-[var(--color-text)]"
           title="Close editor (Ctrl+E)"
         >
           ✕
@@ -76,7 +76,7 @@ export function SqlEditor() {
 
       {/* Fixed height with its own scrolling, as the textarea had. The editor
           grows its own content area, so the height belongs on the wrapper. */}
-      <div className="h-40 shrink-0 overflow-auto border-b border-[var(--color-border)] bg-[var(--color-bg)]">
+      <div className="h-40 shrink-0 overflow-auto border-b border-[var(--color-border)] bg-[var(--color-elevated)]">
         <Editor
           autoFocus
           value={sqlText}
@@ -94,15 +94,15 @@ export function SqlEditor() {
           several times over, and before this the later answers were dropped
           on the floor. Hidden for the single result that most runs produce. */}
       {sqlResults.length > 1 && (
-        <div className="chrome flex shrink-0 items-center gap-1 overflow-x-auto border-b border-[var(--color-border)] bg-[var(--color-panel)] px-2 py-1">
+        <div className="chrome flex shrink-0 items-center gap-1 overflow-x-auto border-b border-[var(--color-border)] bg-[var(--color-panel)]/70 px-2 py-1.5">
           {sqlResults.map((r, i) => (
             <button
               key={i}
               onClick={() => selectSqlResult(i)}
               title={r.query}
-              className={`shrink-0 rounded px-2 py-0.5 ${
+              className={`shrink-0 rounded-lg px-2 py-0.5 ${
                 i === sqlResultIndex
-                  ? 'bg-[var(--color-elevated)] text-[var(--color-accent)]'
+                  ? 'bg-[var(--color-accent-dim)]/60 font-bold text-[var(--color-accent)] shadow-xs'
                   : 'text-[var(--color-muted)] hover:bg-[var(--color-elevated)]'
               }`}
             >

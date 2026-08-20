@@ -193,7 +193,7 @@ function Tab({
       onClick={onClick}
       disabled={disabled}
       title={title}
-      className={`rounded px-2 py-0.5 ${
+      className={`rounded-lg px-2 py-0.5 ${
         active
           ? 'bg-[var(--color-accent-dim)] text-[var(--color-text)]'
           : 'text-[var(--color-muted)] disabled:opacity-40 enabled:hover:bg-[var(--color-elevated)]'

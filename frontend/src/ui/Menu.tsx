@@ -38,11 +38,11 @@ export function ContextMenu({ items, heading, children, className }: ContextMenu
 
       <RadixContextMenu.Portal>
         <RadixContextMenu.Content
-          className="chrome z-50 min-w-48 overflow-hidden rounded-md border border-[var(--color-border-strong)] bg-[var(--color-elevated)] py-1 shadow-2xl"
+          className="chrome animate-pop-in z-50 min-w-48 origin-top-left overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-elevated)] p-1.5 shadow-xl"
           collisionPadding={8}
         >
           {heading && (
-            <RadixContextMenu.Label className="truncate border-b border-[var(--color-border)] px-3 pt-1 pb-1.5 text-[var(--color-faint)]">
+            <RadixContextMenu.Label className="mb-1 truncate border-b border-[var(--color-border)] px-3 pt-1 pb-2 font-semibold text-[var(--color-faint)]">
               {heading}
             </RadixContextMenu.Label>
           )}
@@ -54,7 +54,7 @@ export function ContextMenu({ items, heading, children, className }: ContextMenu
               <RadixContextMenu.Item
                 disabled={item.disabled}
                 onSelect={item.onSelect}
-                className={`block cursor-default px-3 py-1.5 outline-none select-none data-[disabled]:opacity-35 data-[highlighted]:bg-[var(--color-accent-dim)]/45 ${
+                className={`block cursor-default rounded-lg px-3 py-1.5 outline-none select-none data-[disabled]:opacity-35 data-[highlighted]:bg-[var(--color-accent-dim)]/60 ${
                   item.danger ? 'text-[var(--color-danger)]' : ''
                 }`}
               >

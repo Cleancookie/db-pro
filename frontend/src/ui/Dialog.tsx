@@ -63,11 +63,11 @@ export function Dialog({
   return (
     <RadixDialog.Root open={open} onOpenChange={(next) => !next && onClose()}>
       <RadixDialog.Portal>
-        <RadixDialog.Overlay className="chrome fixed inset-0 z-40 bg-black/50" />
+        <RadixDialog.Overlay className="chrome animate-fade-in fixed inset-0 z-40 bg-[var(--color-scrim)] backdrop-blur-[3px]" />
         <RadixDialog.Content
-          className={`chrome fixed top-1/2 left-1/2 z-40 max-h-[85vh] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-elevated)] shadow-2xl ${widthClass}`}
+          className={`chrome animate-pop-in-centred fixed top-1/2 left-1/2 z-40 max-h-[85vh] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-2xl border border-[var(--color-border)] bg-[var(--color-elevated)] shadow-2xl ${widthClass}`}
         >
-          <RadixDialog.Title className="sticky top-0 z-10 border-b border-[var(--color-border)] bg-[var(--color-elevated)] px-4 py-3 font-semibold">
+          <RadixDialog.Title className="sticky top-0 z-10 border-b border-[var(--color-border)] bg-[var(--color-elevated)] px-5 py-3.5 font-bold">
             {title}
           </RadixDialog.Title>
           {/* Always rendered: a dialog without a description is an
@@ -79,7 +79,7 @@ export function Dialog({
           {children}
 
           {footer && (
-            <div className="sticky bottom-0 flex items-center gap-2 border-t border-[var(--color-border)] bg-[var(--color-elevated)] px-4 py-3">
+            <div className="sticky bottom-0 flex items-center gap-2 border-t border-[var(--color-border)] bg-[var(--color-panel)]/60 px-5 py-3.5">
               {footer}
             </div>
           )}
@@ -109,7 +109,7 @@ export function FormDialog({
       >
         {children}
         {footer && (
-          <div className="sticky bottom-0 flex items-center gap-2 border-t border-[var(--color-border)] bg-[var(--color-elevated)] px-4 py-3">
+          <div className="sticky bottom-0 flex items-center gap-2 border-t border-[var(--color-border)] bg-[var(--color-panel)]/60 px-5 py-3.5">
             {footer}
           </div>
         )}
@@ -121,12 +121,13 @@ export function FormDialog({
 /** Shared button styling, so dialog footers look the same everywhere. */
 export const dialogButton = {
   primary:
-    'rounded bg-[var(--color-accent-dim)] px-3 py-1.5 font-medium disabled:opacity-40 enabled:hover:bg-[var(--color-accent)]',
+    'rounded-xl bg-[var(--color-accent)] px-4 py-1.5 font-bold text-white shadow-sm disabled:opacity-40 enabled:hover:brightness-110 enabled:hover:shadow-md',
   secondary:
-    'rounded border border-[var(--color-border-strong)] px-3 py-1.5 disabled:opacity-40 enabled:hover:border-[var(--color-accent)]',
-  ghost: 'rounded px-3 py-1.5 text-[var(--color-muted)] hover:text-[var(--color-text)]',
+    'rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-elevated)] px-4 py-1.5 font-semibold disabled:opacity-40 enabled:hover:border-[var(--color-accent)] enabled:hover:bg-[var(--color-accent-dim)]/30',
+  ghost:
+    'rounded-xl px-4 py-1.5 font-semibold text-[var(--color-muted)] hover:bg-[var(--color-accent-dim)]/30 hover:text-[var(--color-text)]',
   danger:
-    'rounded border border-[var(--color-border-strong)] px-3 py-1.5 text-[var(--color-danger)] hover:border-[var(--color-danger)]',
+    'rounded-xl border border-[var(--color-border-strong)] px-4 py-1.5 font-semibold text-[var(--color-danger)] hover:border-[var(--color-danger)] hover:bg-[var(--color-danger)]/10',
   dangerFilled:
-    'rounded bg-[var(--color-danger)]/20 px-3 py-1.5 font-medium text-[var(--color-danger)] hover:bg-[var(--color-danger)]/30',
+    'rounded-xl bg-[var(--color-danger)] px-4 py-1.5 font-bold text-white shadow-sm hover:brightness-110 hover:shadow-md',
 } as const

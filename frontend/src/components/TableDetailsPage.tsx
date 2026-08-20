@@ -39,9 +39,9 @@ function Section({
 }) {
   return (
     <section className="mb-6">
-      <h2 className="mb-2 flex items-center gap-2 font-semibold uppercase tracking-wide text-neutral-400">
+      <h2 className="mb-2 flex items-center gap-2 font-semibold uppercase tracking-wide text-[var(--color-muted)]">
         {title}
-        {count !== undefined && <span className="font-normal text-neutral-500">{count}</span>}
+        {count !== undefined && <span className="font-normal text-[var(--color-faint)]">{count}</span>}
       </h2>
       {children}
     </section>
@@ -55,13 +55,13 @@ function Section({
 function Fact({ label, value, reason }: { label: string; value?: string; reason?: string }) {
   return (
     <div className="flex gap-3 py-1">
-      <span className="w-32 shrink-0 text-neutral-500">{label}</span>
+      <span className="w-32 shrink-0 text-[var(--color-faint)]">{label}</span>
       {reason ? (
-        <span className="italic text-neutral-500" title={reason}>
+        <span className="italic text-[var(--color-faint)]" title={reason}>
           {reason}
         </span>
       ) : (
-        <span className="text-neutral-200">{value ?? '—'}</span>
+        <span className="text-[var(--color-text)]">{value ?? '—'}</span>
       )}
     </div>
   )
@@ -69,10 +69,10 @@ function Fact({ label, value, reason }: { label: string; value?: string; reason?
 
 /** A table that says so when it has no rows, rather than rendering a bare header. */
 function Empty({ children }: { children: React.ReactNode }) {
-  return <p className="text-neutral-500">{children}</p>
+  return <p className="text-[var(--color-faint)]">{children}</p>
 }
 
-const TH = 'px-2 py-1 text-left font-medium text-neutral-400'
+const TH = 'px-2 py-1 text-left font-medium text-[var(--color-muted)]'
 const TD = 'px-2 py-1 align-top'
 
 function Columns({ detail }: { detail: ObjectDetail }) {
@@ -81,7 +81,7 @@ function Columns({ detail }: { detail: ObjectDetail }) {
   return (
     <table className="w-full border-collapse">
       <thead>
-        <tr className="border-b border-neutral-800">
+        <tr className="border-b-2 border-[var(--color-border-strong)]">
           <th className={TH}>#</th>
           <th className={TH}>Name</th>
           <th className={TH}>Type</th>
@@ -100,9 +100,9 @@ function Columns({ detail }: { detail: ObjectDetail }) {
             c.collation ?? '',
           ].filter(Boolean)
           return (
-            <tr key={c.name} className="border-b border-neutral-900">
-              <td className={`${TD} text-neutral-600`}>{c.ordinal}</td>
-              <td className={`${TD} font-medium text-neutral-100`}>
+            <tr key={c.name} className="border-b border-[var(--color-border)]">
+              <td className={`${TD} text-[var(--color-faint)]`}>{c.ordinal}</td>
+              <td className={`${TD} font-medium font-semibold text-[var(--color-text)]`}>
                 {c.name}
                 {c.primaryKey && (
                   <span className="ml-1 text-amber-500" title="Primary key">
@@ -111,11 +111,11 @@ function Columns({ detail }: { detail: ObjectDetail }) {
                 )}
               </td>
               <td className={`${TD} text-sky-300`}>{c.dataType}</td>
-              <td className={`${TD} text-neutral-400`}>{c.nullable ? 'yes' : 'no'}</td>
-              <td className={`${TD} text-neutral-400`}>{c.default ?? '—'}</td>
-              <td className={`${TD} text-neutral-500`}>{extra.join(', ') || '—'}</td>
+              <td className={`${TD} text-[var(--color-muted)]`}>{c.nullable ? 'yes' : 'no'}</td>
+              <td className={`${TD} text-[var(--color-muted)]`}>{c.default ?? '—'}</td>
+              <td className={`${TD} text-[var(--color-faint)]`}>{extra.join(', ') || '—'}</td>
               {anyComment && !commentsUnavailable && (
-                <td className={`${TD} text-neutral-400`}>{c.comment ?? '—'}</td>
+                <td className={`${TD} text-[var(--color-muted)]`}>{c.comment ?? '—'}</td>
               )}
             </tr>
           )
@@ -131,19 +131,19 @@ export function TableDetailsPage() {
   const error = useStore((s) => s.detailError)
   const setView = useStore((s) => s.setView)
 
-  if (loading) return <div className="p-4 text-neutral-500">Describing…</div>
+  if (loading) return <div className="p-4 text-[var(--color-faint)]">Describing…</div>
   if (error) return <div className="p-4 text-red-400">{error}</div>
-  if (!detail) return <div className="p-4 text-neutral-500">Nothing to describe.</div>
+  if (!detail) return <div className="p-4 text-[var(--color-faint)]">Nothing to describe.</div>
 
   const u = detail.unavailable ?? {}
 
   return (
     <div className="h-full overflow-auto p-4">
       <header className="mb-5 flex items-baseline gap-2">
-        <h1 className="font-semibold text-neutral-100">{qualifiedName(detail.ref)}</h1>
-        <span className="uppercase tracking-wide text-neutral-500">{detail.type}</span>
+        <h1 className="font-semibold font-semibold text-[var(--color-text)]">{qualifiedName(detail.ref)}</h1>
+        <span className="uppercase tracking-wide text-[var(--color-faint)]">{detail.type}</span>
         <button
-          className="ml-auto text-neutral-500 hover:text-neutral-300"
+          className="ml-auto text-[var(--color-faint)] hover:text-[var(--color-text)]"
           onClick={() => setView('data')}
         >
           Back to rows (Esc)
@@ -183,7 +183,7 @@ export function TableDetailsPage() {
         {detail.indexes.length ? (
           <table className="w-full border-collapse">
             <thead>
-              <tr className="border-b border-neutral-800">
+              <tr className="border-b-2 border-[var(--color-border-strong)]">
                 <th className={TH}>Name</th>
                 <th className={TH}>Columns</th>
                 <th className={TH}>Unique</th>
@@ -192,16 +192,16 @@ export function TableDetailsPage() {
             </thead>
             <tbody>
               {detail.indexes.map((ix) => (
-                <tr key={ix.name} className="border-b border-neutral-900">
-                  <td className={`${TD} text-neutral-100`}>
+                <tr key={ix.name} className="border-b border-[var(--color-border)]">
+                  <td className={`${TD} font-semibold text-[var(--color-text)]`}>
                     {ix.name}
                     {ix.primary && <span className="ml-1 text-amber-500">(primary)</span>}
                   </td>
-                  <td className={`${TD} text-neutral-300`}>
+                  <td className={`${TD} text-[var(--color-text)]`}>
                     {ix.columns.join(', ') || '(expression)'}
                   </td>
-                  <td className={`${TD} text-neutral-400`}>{ix.unique ? 'yes' : 'no'}</td>
-                  <td className={`${TD} text-neutral-500`}>{ix.method || '—'}</td>
+                  <td className={`${TD} text-[var(--color-muted)]`}>{ix.unique ? 'yes' : 'no'}</td>
+                  <td className={`${TD} text-[var(--color-faint)]`}>{ix.method || '—'}</td>
                 </tr>
               ))}
             </tbody>
@@ -215,7 +215,7 @@ export function TableDetailsPage() {
         {detail.foreignKeys.length ? (
           <table className="w-full border-collapse">
             <thead>
-              <tr className="border-b border-neutral-800">
+              <tr className="border-b-2 border-[var(--color-border-strong)]">
                 <th className={TH}>Name</th>
                 <th className={TH}>Columns</th>
                 <th className={TH}>References</th>
@@ -229,14 +229,14 @@ export function TableDetailsPage() {
                   ? `${fk.referencedSchema}.${fk.referencedTable}`
                   : fk.referencedTable
                 return (
-                  <tr key={fk.name} className="border-b border-neutral-900">
-                    <td className={`${TD} text-neutral-100`}>{fk.name}</td>
-                    <td className={`${TD} text-neutral-300`}>{fk.columns.join(', ')}</td>
-                    <td className={`${TD} text-neutral-300`}>
+                  <tr key={fk.name} className="border-b border-[var(--color-border)]">
+                    <td className={`${TD} font-semibold text-[var(--color-text)]`}>{fk.name}</td>
+                    <td className={`${TD} text-[var(--color-text)]`}>{fk.columns.join(', ')}</td>
+                    <td className={`${TD} text-[var(--color-text)]`}>
                       {target} ({fk.referencedColumns.join(', ')})
                     </td>
-                    <td className={`${TD} text-neutral-500`}>{fk.onUpdate || '—'}</td>
-                    <td className={`${TD} text-neutral-500`}>{fk.onDelete || '—'}</td>
+                    <td className={`${TD} text-[var(--color-faint)]`}>{fk.onUpdate || '—'}</td>
+                    <td className={`${TD} text-[var(--color-faint)]`}>{fk.onDelete || '—'}</td>
                   </tr>
                 )
               })}
@@ -256,9 +256,9 @@ export function TableDetailsPage() {
           <table className="w-full border-collapse">
             <tbody>
               {detail.checks.map((c) => (
-                <tr key={c.name} className="border-b border-neutral-900">
-                  <td className={`${TD} w-48 text-neutral-100`}>{c.name}</td>
-                  <td className={`${TD} font-mono text-neutral-300`}>{c.expression}</td>
+                <tr key={c.name} className="border-b border-[var(--color-border)]">
+                  <td className={`${TD} w-48 font-semibold text-[var(--color-text)]`}>{c.name}</td>
+                  <td className={`${TD} font-mono text-[var(--color-text)]`}>{c.expression}</td>
                 </tr>
               ))}
             </tbody>
@@ -273,9 +273,9 @@ export function TableDetailsPage() {
           <table className="w-full border-collapse">
             <tbody>
               {detail.triggers.map((t) => (
-                <tr key={t.name} className="border-b border-neutral-900">
-                  <td className={`${TD} w-48 text-neutral-100`}>{t.name}</td>
-                  <td className={`${TD} text-neutral-400`}>
+                <tr key={t.name} className="border-b border-[var(--color-border)]">
+                  <td className={`${TD} w-48 font-semibold text-[var(--color-text)]`}>{t.name}</td>
+                  <td className={`${TD} text-[var(--color-muted)]`}>
                     {[t.timing, t.event].filter(Boolean).join(' ') || '—'}
                   </td>
                 </tr>
@@ -289,7 +289,7 @@ export function TableDetailsPage() {
 
       {detail.definition && (
         <Section title="Definition">
-          <pre className="overflow-x-auto rounded bg-neutral-900 p-3 font-mono text-neutral-300">
+          <pre className="overflow-x-auto rounded-lg bg-[var(--color-panel)]/70 p-3 font-mono text-[var(--color-text)]">
             {detail.definition}
           </pre>
         </Section>

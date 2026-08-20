@@ -123,10 +123,10 @@ export function ConnectionDialog({ existing }: { existing: Connection | null }) 
                   key={k}
                   type="button"
                   onClick={() => patch({ kind: k })}
-                  className={`flex-1 rounded border px-2 py-1.5 ${
+                  className={`flex-1 rounded-lg border px-2 py-1.5 ${
                     conn.kind === k
                       ? 'border-[var(--color-accent)] bg-[var(--color-accent-dim)]/40'
-                      : 'border-[var(--color-border-strong)] hover:border-[var(--color-border-strong)] hover:bg-white/5'
+                      : 'border-[var(--color-border-strong)] hover:border-[var(--color-accent)] hover:bg-[var(--color-accent-dim)]/25'
                   }`}
                 >
                   {drivers?.[k]?.displayName ?? k}
@@ -199,7 +199,7 @@ export function ConnectionDialog({ existing }: { existing: Connection | null }) 
         </div>
 
         {test.state === 'failed' && (
-          <p className="mx-4 mb-3 rounded border border-[var(--color-danger)]/50 bg-[var(--color-danger)]/10 px-3 py-2 font-[var(--font-mono)] break-words text-[var(--color-danger)]">
+          <p className="mx-4 mb-3 rounded-lg border border-[var(--color-danger)]/50 bg-[var(--color-danger)]/10 px-3 py-2 font-[var(--font-mono)] break-words text-[var(--color-danger)]">
             {test.message}
           </p>
         )}
@@ -212,7 +212,7 @@ export function ConnectionDialog({ existing }: { existing: Connection | null }) 
 }
 
 const inputClass =
-  'w-full rounded border border-[var(--color-border-strong)] bg-[var(--color-bg)] px-2 py-1.5 outline-none placeholder:text-[var(--color-faint)]'
+  'w-full rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-panel)]/60 px-3 py-1.5 outline-none placeholder:text-[var(--color-faint)] focus:bg-[var(--color-elevated)]'
 
 function Field({
   label,

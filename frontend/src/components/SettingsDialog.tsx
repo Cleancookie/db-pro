@@ -184,7 +184,7 @@ export function SettingsDialog() {
 }
 
 const selectClass =
-  'rounded border border-[var(--color-border-strong)] bg-[var(--color-bg)] px-2 py-1 outline-none'
+  'rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-panel)]/60 px-2 py-1 outline-none'
 
 function Group({ label, children }: { label: string; children: React.ReactNode }) {
   return (

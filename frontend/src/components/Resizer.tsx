@@ -177,8 +177,8 @@ export function Resizer({
       }}
       onDoubleClick={() => commit(defaultSize)}
       title="Drag to resize · double-click to reset"
-      className={`absolute z-10 hover:bg-[var(--color-accent)] focus-visible:bg-[var(--color-accent)] focus-visible:outline-none ${
-        axis === 'x' ? 'inset-y-0 w-1 cursor-col-resize' : 'inset-x-0 h-1 cursor-row-resize'
+      className={`absolute z-10 rounded-full transition-colors duration-150 hover:bg-[var(--color-accent)] focus-visible:bg-[var(--color-accent)] focus-visible:outline-none ${
+        axis === 'x' ? 'inset-y-0 w-1.5 cursor-col-resize' : 'inset-x-0 h-1.5 cursor-row-resize'
       } ${dragging ? 'bg-[var(--color-accent)]' : ''} ${className}`}
     />
   )

@@ -117,15 +117,19 @@ const theme = EditorView.theme({
   },
   '.cm-tooltip': {
     backgroundColor: 'var(--color-elevated)',
-    border: '1px solid var(--color-border-strong)',
-    borderRadius: '4px',
+    border: '1px solid var(--color-border)',
+    borderRadius: 'var(--radius-xl)',
+    padding: '0.25rem',
+    boxShadow: 'var(--shadow-lg)',
+    overflow: 'hidden',
     // The tray sits at the bottom of the window; a popup that renders under
     // it would be unreadable in exactly the case it is needed.
     zIndex: '60',
   },
   '.cm-tooltip-autocomplete ul li': {
     fontFamily: 'var(--font-mono)',
-    padding: '2px 6px',
+    padding: '3px 8px',
+    borderRadius: 'var(--radius-md)',
   },
   '.cm-tooltip-autocomplete ul li[aria-selected]': {
     backgroundColor: 'var(--color-accent-dim)',

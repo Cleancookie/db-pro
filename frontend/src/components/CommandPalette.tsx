@@ -113,21 +113,21 @@ export function CommandPalette() {
 
   return (
     <div
-      className="chrome fixed inset-0 z-50 flex items-start justify-center bg-black/50 pt-[12vh]"
+      className="chrome animate-fade-in fixed inset-0 z-50 flex items-start justify-center bg-[var(--color-scrim)] pt-[12vh] backdrop-blur-[3px]"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) setPalette(null)
       }}
     >
       <div
-        className="w-[min(680px,92vw)] overflow-hidden rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-elevated)] shadow-2xl"
+        className="animate-pop-in w-[min(680px,92vw)] overflow-hidden rounded-3xl border border-[var(--color-border)] bg-[var(--color-elevated)] shadow-2xl"
         role="dialog"
         aria-label={mode === 'go' ? 'Go to' : 'Run a command'}
       >
-        <div className="flex items-center gap-2 border-b border-[var(--color-border)] px-4">
+        <div className="flex items-center gap-2.5 border-b border-[var(--color-border)] px-5">
           {/* Which palette this is, stated rather than implied: the two look
               otherwise identical, and typing into the wrong one is the obvious
               way to be confused by a split palette. */}
-          <span className="shrink-0 font-semibold tracking-wider text-[var(--color-faint)] uppercase">
+          <span className="shrink-0 rounded-full bg-[var(--color-accent-dim)]/50 px-2.5 py-0.5 font-bold tracking-wide text-[var(--color-accent)]">
             {mode === 'go' ? 'Go to' : 'Run'}
           </span>
           <input
@@ -140,14 +140,14 @@ export function CommandPalette() {
             }
             spellCheck={false}
             aria-label={mode === 'go' ? 'Go to' : 'Command'}
-            className="min-w-0 flex-1 bg-transparent py-3.5 outline-none placeholder:text-[var(--color-faint)]"
+            className="min-w-0 flex-1 bg-transparent py-3.5 outline-none placeholder:text-[var(--color-faint)] focus-visible:shadow-none focus-visible:outline-none"
           />
-          <kbd className="shrink-0 rounded border border-[var(--color-border-strong)] px-1.5 py-0.5 font-[var(--font-mono)] text-[var(--color-faint)]">
+          <kbd className="shrink-0 rounded-lg border border-[var(--color-border-strong)] px-1.5 py-0.5 font-[var(--font-mono)] text-[var(--color-faint)]">
             Ctrl+Shift+P
           </kbd>
         </div>
 
-        <div ref={listRef} className="max-h-[52vh] overflow-y-auto py-1">
+        <div ref={listRef} className="max-h-[52vh] overflow-y-auto p-2">
           {results.length === 0 && (
             <div className="px-4 py-6 text-center text-[var(--color-faint)]">
               {mode === 'go'
@@ -160,7 +160,7 @@ export function CommandPalette() {
             return (
               <div key={item.id}>
                 {item.group !== prevGroup && (
-                  <div className="px-4 pt-2.5 pb-1 font-semibold tracking-wider text-[var(--color-faint)] uppercase">
+                  <div className="px-3 pt-3 pb-1 font-bold tracking-wider text-[var(--color-faint)] uppercase">
                     {item.group}
                   </div>
                 )}
@@ -168,8 +168,10 @@ export function CommandPalette() {
                   data-index={i}
                   onMouseMove={() => setSelected(i)}
                   onClick={() => run(item)}
-                  className={`flex w-full items-center gap-3 px-4 py-2 text-left ${
-                    i === selected ? 'bg-[var(--color-accent-dim)]/45' : ''
+                  className={`flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left ${
+                    i === selected
+                      ? 'bg-[var(--color-accent-dim)]/60 shadow-xs'
+                      : 'hover:bg-[var(--color-accent-dim)]/25'
                   }`}
                 >
                   <span className="min-w-0 flex-1">
@@ -186,7 +188,7 @@ export function CommandPalette() {
                     )}
                   </span>
                   {item.shortcut && (
-                    <kbd className="shrink-0 rounded border border-[var(--color-border-strong)] px-1.5 py-0.5 font-[var(--font-mono)] text-[var(--color-muted)]">
+                    <kbd className="shrink-0 rounded-lg border border-[var(--color-border-strong)] px-1.5 py-0.5 font-[var(--font-mono)] text-[var(--color-muted)]">
                       {item.shortcut}
                     </kbd>
                   )}

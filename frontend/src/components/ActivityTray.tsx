@@ -80,14 +80,14 @@ export function ActivityTray() {
         (status.cancelling > 0 ? ` · ${status.cancelling} cancelling` : '')
 
   return (
-    <div className="chrome relative shrink-0 border-t border-[var(--color-border)] bg-[var(--color-panel)]">
+    <div className="chrome relative shrink-0 border-t border-[var(--color-border)] bg-[var(--color-panel)]/70">
       {open && (
         <div
           // Height is inline because it is dragged. Capped by the viewport as
           // well as by the setting: a height saved on a large monitor must not
           // bury the grid on a small one.
           style={{ height: `min(${resize.size}px, 80vh)` }}
-          className="absolute inset-x-0 bottom-full flex flex-col border-t border-[var(--color-border)] bg-[var(--color-panel)] shadow-[0_-8px_24px_rgba(0,0,0,0.45)]"
+          className="absolute inset-x-0 bottom-full flex flex-col border-t border-[var(--color-border)] bg-[var(--color-panel)]/95 shadow-[0_-10px_30px_rgba(88,75,145,0.16)] backdrop-blur-sm"
         >
           {/* Dragging the top edge upwards makes the tray taller, hence invert. */}
           <Resizer {...resize} axis="y" invert label="Resize the activity tray" className="top-0" />
@@ -104,7 +104,7 @@ export function ActivityTray() {
             <button
               onClick={() => void clearHistory()}
               disabled={status.finished === 0}
-              className="w-16 shrink-0 rounded py-0.5 tracking-normal normal-case disabled:opacity-30 enabled:hover:bg-[var(--color-elevated)] enabled:hover:text-[var(--color-text)]"
+              className="w-16 shrink-0 rounded-full py-0.5 tracking-normal normal-case disabled:opacity-30 enabled:hover:bg-[var(--color-elevated)] enabled:hover:text-[var(--color-text)]"
             >
               Clear log
             </button>
@@ -128,7 +128,7 @@ export function ActivityTray() {
         onClick={() => setTrayOpen(!open)}
         aria-expanded={open}
         title="Query activity (Ctrl+J)"
-        className="flex h-6 w-full items-center gap-2 px-3 hover:bg-[var(--color-elevated)]"
+        className="flex h-6 w-full items-center gap-2 px-3 hover:bg-[var(--color-elevated)]/70"
       >
         <span className="text-[var(--color-faint)]">{open ? '▾' : '▸'}</span>
         <span className="font-semibold tracking-wider text-[var(--color-faint)] uppercase">
@@ -254,7 +254,7 @@ function QueryRow({
       <button
         onClick={requestCancel}
         disabled={!running || query.phase === 'cancelling'}
-        className="w-16 shrink-0 rounded border border-[var(--color-border-strong)] py-0.5 text-[var(--color-danger)] disabled:invisible enabled:hover:border-[var(--color-danger)]"
+        className="w-16 shrink-0 rounded-lg border border-[var(--color-border-strong)] py-0.5 text-[var(--color-danger)] disabled:invisible enabled:hover:border-[var(--color-danger)]"
       >
         Cancel
       </button>
@@ -300,7 +300,7 @@ export function ConfirmCancelDialog({ queryId, sql }: { queryId: string; sql: st
           The statement is stopped at the server. A write that is part-way through is rolled back by
           the database, not by this app.
         </p>
-        <pre className="max-h-32 overflow-auto rounded bg-[var(--color-bg)] p-2 font-[var(--font-mono)] whitespace-pre-wrap text-[var(--color-muted)]">
+        <pre className="max-h-32 overflow-auto rounded-xl bg-[var(--color-panel)]/60 p-3 font-[var(--font-mono)] whitespace-pre-wrap text-[var(--color-muted)]">
           {sql}
         </pre>
       </div>

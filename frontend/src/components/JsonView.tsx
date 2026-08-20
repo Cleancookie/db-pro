@@ -50,7 +50,7 @@ function Node({ name, value, depth }: { name: string | null; value: unknown; dep
         onClick={() => setOpen(!open)}
         // The whole row toggles: a 10px triangle is a poor click target when
         // you are working down a nested document.
-        className="flex w-full items-baseline gap-2 rounded px-1 text-left hover:bg-[var(--color-elevated)]"
+        className="flex w-full items-baseline gap-2 rounded-lg px-1 text-left hover:bg-[var(--color-elevated)]"
         aria-expanded={open}
       >
         <span className="w-3 shrink-0 text-[var(--color-faint)]">{open ? '▾' : '▸'}</span>

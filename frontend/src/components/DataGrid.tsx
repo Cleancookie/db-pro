@@ -305,7 +305,7 @@ export function DataGrid({
             never reach the menu. */}
         <ContextMenu items={headerItems} heading={headerName}>
           <div
-            className="chrome sticky top-0 z-10 flex border-b border-[var(--color-border-strong)] bg-[var(--color-panel)]"
+            className="chrome sticky top-0 z-10 flex border-b border-[var(--color-border-strong)] bg-[var(--color-panel)]/90 font-bold backdrop-blur-sm"
             style={{ height: gm.headerHeight }}
           >
             <div
@@ -325,7 +325,7 @@ export function DataGrid({
                     m.column?.primaryKey ? ' · primary key' : ''
                   }`}
                   className={`flex shrink-0 items-center gap-1 border-r border-[var(--color-border)] px-2 text-left ${
-                    onSort ? 'hover:bg-[var(--color-elevated)]' : 'cursor-default'
+                    onSort ? 'hover:bg-[var(--color-accent-dim)]/40' : 'cursor-default'
                   }`}
                   style={{ width: widths[i] }}
                 >
@@ -334,7 +334,7 @@ export function DataGrid({
                     // wildly across the platforms this ships to, and a tofu box
                     // next to a column name reads as corruption.
                     <span
-                      className="shrink-0 rounded-sm bg-[var(--color-warn)]/20 px-1 font-semibold text-[var(--color-warn)]"
+                      className="shrink-0 rounded-full bg-[var(--color-warn)]/20 px-1.5 font-semibold text-[var(--color-warn)]"
                       title="primary key"
                     >
                       PK
@@ -367,8 +367,8 @@ export function DataGrid({
                 <div
                   key={v.key}
                   className={`absolute flex ${
-                    v.index % 2 === 1 ? 'bg-white/[0.015]' : ''
-                  } hover:bg-[var(--color-accent-dim)]/15`}
+                    v.index % 2 === 1 ? 'bg-[var(--color-row-alt)]' : ''
+                  } hover:bg-[var(--color-accent-dim)]/25`}
                   style={{
                     top: v.start,
                     height: v.size,
@@ -564,7 +564,7 @@ function RecordsGrid({
         {/* The record numbers. Sticky on both axes, so the number of the record
             you are reading stays put whichever way you scroll. */}
         <div
-          className="chrome sticky top-0 z-20 flex border-b border-[var(--color-border-strong)] bg-[var(--color-panel)]"
+          className="chrome sticky top-0 z-20 flex border-b border-[var(--color-border-strong)] bg-[var(--color-panel)]/90 backdrop-blur-sm"
           style={{ height: gm.headerHeight, width: totalWidth }}
         >
           <div
@@ -598,7 +598,7 @@ function RecordsGrid({
               return (
                 <div
                   key={v.key}
-                  className={`absolute flex ${v.index % 2 === 1 ? 'bg-white/[0.015]' : ''}`}
+                  className={`absolute flex ${v.index % 2 === 1 ? 'bg-[var(--color-row-alt)]' : ''}`}
                   style={{ top: v.start, height: v.size, left: 0, width: totalWidth }}
                 >
                   {/* The name of the column this record's value belongs to.
@@ -613,7 +613,7 @@ function RecordsGrid({
                   >
                     {m.column?.primaryKey && (
                       <span
-                        className="shrink-0 rounded-sm bg-[var(--color-warn)]/20 px-1 font-semibold text-[var(--color-warn)]"
+                        className="shrink-0 rounded-full bg-[var(--color-warn)]/20 px-1.5 font-semibold text-[var(--color-warn)]"
                         title="primary key"
                       >
                         PK
@@ -635,7 +635,7 @@ function RecordsGrid({
                           onMouseDown={(e) => pick(c.index, v.index, e.shiftKey)}
                           onContextMenu={() => pick(c.index, v.index, false)}
                           onDoubleClick={() => onOpenCell?.(c.index, v.index)}
-                          className={`absolute top-0 truncate border-r border-b border-[var(--color-border)] px-2 hover:bg-[var(--color-accent-dim)]/15 ${
+                          className={`absolute top-0 truncate border-r border-b border-[var(--color-border)] px-2 hover:bg-[var(--color-accent-dim)]/25 ${
                             m.numeric ? 'text-right' : ''
                           } ${cellSelectionClass(isFocus, inRange)}`}
                           style={{
@@ -703,7 +703,7 @@ function CellBody({ value, cut }: { value: Cell; cut: boolean }) {
     return (
       <span className="flex min-w-0 items-center gap-1">
         <span className="truncate">{String(value)}</span>
-        <span className="shrink-0 rounded-sm bg-[var(--color-warn)]/20 px-1 font-semibold text-[var(--color-warn)]">
+        <span className="shrink-0 rounded-full bg-[var(--color-warn)]/20 px-1.5 font-semibold text-[var(--color-warn)]">
           CUT
         </span>
       </span>

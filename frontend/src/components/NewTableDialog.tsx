@@ -206,7 +206,7 @@ export function NewTableDialog({ schema }: { schema: string }) {
               disabled={columns.length === 1}
               title="Remove this column"
               aria-label={`Remove column ${i + 1}`}
-              className="w-7 rounded py-1 text-[var(--color-muted)] disabled:opacity-30 enabled:hover:bg-[var(--color-elevated)] enabled:hover:text-[var(--color-danger)]"
+              className="w-7 rounded-lg py-1 text-[var(--color-muted)] disabled:opacity-30 enabled:hover:bg-[var(--color-elevated)] enabled:hover:text-[var(--color-danger)]"
             >
               ✕
             </button>
@@ -222,7 +222,7 @@ export function NewTableDialog({ schema }: { schema: string }) {
         <button
           type="button"
           onClick={() => setColumns((cs) => [...cs, blankColumn()])}
-          className="mt-1 rounded px-1.5 py-1 text-[var(--color-muted)] hover:bg-[var(--color-elevated)] hover:text-[var(--color-text)]"
+          className="mt-1 rounded-lg px-1.5 py-1 text-[var(--color-muted)] hover:bg-[var(--color-elevated)] hover:text-[var(--color-text)]"
         >
           + Add column
         </button>
@@ -233,11 +233,11 @@ export function NewTableDialog({ schema }: { schema: string }) {
           own wording can be checked before it does. */}
       <div className="px-4 pb-4">
         {previewError ? (
-          <p className="rounded border border-[var(--color-danger)]/50 bg-[var(--color-danger)]/10 px-3 py-2 font-[var(--font-mono)] break-words text-[var(--color-danger)]">
+          <p className="rounded-lg border border-[var(--color-danger)]/50 bg-[var(--color-danger)]/10 px-3 py-2 font-[var(--font-mono)] break-words text-[var(--color-danger)]">
             {previewError}
           </p>
         ) : (
-          <pre className="max-h-40 overflow-auto rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 font-[var(--font-mono)] whitespace-pre text-[var(--color-muted)]">
+          <pre className="max-h-40 overflow-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-panel)]/60 px-3 py-2 font-[var(--font-mono)] whitespace-pre text-[var(--color-muted)]">
             {preview || 'Name the table and fill in a column to see the statement.'}
           </pre>
         )}
@@ -252,7 +252,7 @@ function blankColumn(): NewColumn {
 }
 
 const inputClass =
-  'rounded border border-[var(--color-border-strong)] bg-[var(--color-bg)] px-2 py-1.5 outline-none placeholder:text-[var(--color-faint)]'
+  'rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-panel)]/60 px-2 py-1.5 outline-none placeholder:text-[var(--color-faint)]'
 
 function Field({
   label,

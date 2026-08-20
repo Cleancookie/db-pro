@@ -62,7 +62,7 @@ export function Paginator() {
   }
 
   return (
-    <div className="chrome flex items-center gap-3 border-t border-[var(--color-border)] bg-[var(--color-panel)] px-3 py-1.5">
+    <div className="chrome flex items-center gap-3 border-t border-[var(--color-border)] bg-[var(--color-panel)]/70 px-3 py-2">
       <label className="flex items-center gap-1.5 text-[var(--color-muted)]">
         <input
           type="checkbox"
@@ -82,7 +82,7 @@ export function Paginator() {
                 if (e.target.value === 'custom') setCustomMode(true)
                 else void setPageSize(Number(e.target.value))
               }}
-              className="rounded border border-[var(--color-border-strong)] bg-[var(--color-elevated)] px-1 py-0.5 outline-none"
+              className="rounded-lg border border-[var(--color-border)] bg-[var(--color-elevated)] px-2 py-0.5 shadow-xs outline-none"
             >
               {PAGE_SIZES.map((n) => (
                 <option key={n} value={n}>
@@ -109,7 +109,7 @@ export function Paginator() {
                 autoFocus
                 aria-label="Custom page size"
                 title={`Up to ${rowCap.toLocaleString()}`}
-                className="w-14 rounded border border-[var(--color-border-strong)] bg-[var(--color-elevated)] px-1 py-0.5 text-center outline-none"
+                className="w-14 rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-elevated)] px-1 py-0.5 text-center outline-none"
               />
             )}
           </label>
@@ -119,7 +119,7 @@ export function Paginator() {
               onClick={() => void setPage(1)}
               disabled={page <= 1 || busy}
               title="First page"
-              className="rounded px-1.5 py-0.5 disabled:opacity-30 enabled:hover:bg-[var(--color-elevated)]"
+              className="rounded-full px-2 py-0.5 disabled:opacity-30 enabled:hover:bg-[var(--color-accent-dim)]/50 enabled:hover:text-[var(--color-accent)]"
             >
               «
             </button>
@@ -127,7 +127,7 @@ export function Paginator() {
               onClick={() => void setPage(page - 1)}
               disabled={page <= 1 || busy}
               title="Previous page (Ctrl+←)"
-              className="rounded px-1.5 py-0.5 disabled:opacity-30 enabled:hover:bg-[var(--color-elevated)]"
+              className="rounded-full px-2 py-0.5 disabled:opacity-30 enabled:hover:bg-[var(--color-accent-dim)]/50 enabled:hover:text-[var(--color-accent)]"
             >
               ‹
             </button>
@@ -143,21 +143,21 @@ export function Paginator() {
                 }
               }}
               aria-label="Page number"
-              className="w-12 rounded border border-[var(--color-border-strong)] bg-[var(--color-elevated)] px-1 py-0.5 text-center outline-none"
+              className="w-12 rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-elevated)] px-1 py-0.5 text-center outline-none"
             />
             {lastPage != null && <span className="text-[var(--color-faint)]">of {lastPage}</span>}
             <button
               onClick={() => void setPage(page + 1)}
               disabled={!hasMore || busy}
               title="Next page (Ctrl+→)"
-              className="rounded px-1.5 py-0.5 disabled:opacity-30 enabled:hover:bg-[var(--color-elevated)]"
+              className="rounded-full px-2 py-0.5 disabled:opacity-30 enabled:hover:bg-[var(--color-accent-dim)]/50 enabled:hover:text-[var(--color-accent)]"
             >
               ›
             </button>
           </div>
         </>
       ) : (
-        <span className="text-[var(--color-warn)]">
+        <span className="rounded-full bg-[var(--color-warn)]/15 px-2.5 py-0.5 font-semibold text-[var(--color-warn)]">
           Pagination off — loading every matching row
         </span>
       )}

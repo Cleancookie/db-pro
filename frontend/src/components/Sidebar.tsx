@@ -8,6 +8,13 @@ import { LIMITS, Resizer, useResizable } from './Resizer'
 import type { ObjectType, SchemaObject } from '../types'
 
 const GROUP_ORDER: ObjectType[] = ['table', 'view', 'function', 'procedure']
+/** One pastel per object kind, so the groups are told apart at a glance. */
+const GROUP_TINT: Record<ObjectType, string> = {
+  table: 'var(--color-mint)',
+  view: 'var(--color-sky)',
+  function: 'var(--color-lemon)',
+  procedure: 'var(--color-peach)',
+}
 const GROUP_LABEL: Record<ObjectType, string> = {
   table: 'Tables',
   view: 'Views',
@@ -60,7 +67,7 @@ export function Sidebar() {
     // out of the indentation of everything below.
     <aside
       style={{ width: resize.size }}
-      className={`chrome relative flex shrink-0 flex-col overflow-hidden border-r border-[var(--color-border)] bg-[var(--color-panel)] ${
+      className={`chrome relative flex shrink-0 flex-col overflow-hidden border-r border-[var(--color-border)] bg-[var(--color-panel)]/70 ${
         resize.dragging ? '' : 'transition-[width] duration-75'
       }`}
     >
@@ -80,7 +87,7 @@ export function Sidebar() {
           {connections.length === 0 && (
             <p className="px-1.5 py-2 leading-relaxed text-[var(--color-faint)]">
               No connections yet. Press{' '}
-              <kbd className="rounded border border-[var(--color-border-strong)] px-1">
+              <kbd className="rounded-lg border border-[var(--color-border-strong)] px-1">
                 Ctrl+Shift+P
               </kbd>{' '}
               and choose “New connection”.
@@ -92,14 +99,20 @@ export function Sidebar() {
               <ConnectionMenu key={c.id} connection={c}>
                 <button
                   onClick={() => connect(c.id)}
-                  className={`flex w-full items-center gap-2 rounded px-1.5 py-1 text-left ${
-                    active ? 'bg-[var(--color-accent-dim)]/45' : 'hover:bg-[var(--color-elevated)]'
+                  className={`flex w-full items-center gap-2 rounded-xl px-2 py-1.5 text-left ${
+                    active
+                      ? 'bg-[var(--color-accent-dim)]/55 font-bold shadow-xs'
+                      : 'hover:bg-[var(--color-elevated)] hover:shadow-xs'
                   }`}
                 >
                   <span
-                    className="h-2 w-2 shrink-0 rounded-full"
+                    className="h-2.5 w-2.5 shrink-0 rounded-full ring-2 ring-white"
                     style={{
-                      background: c.colour || (connectedIds.includes(c.id) ? '#5dd6a0' : '#4a525e'),
+                      background:
+                        c.colour ||
+                        (connectedIds.includes(c.id)
+                          ? 'var(--color-success)'
+                          : 'var(--color-border-strong)'),
                     }}
                     title={connectedIds.includes(c.id) ? 'connected' : 'not connected'}
                   />
@@ -131,7 +144,7 @@ export function Sidebar() {
                 placeholder="Filter databases…"
                 spellCheck={false}
                 aria-label="Filter databases"
-                className="mb-1 w-full rounded border border-[var(--color-border-strong)] bg-[var(--color-elevated)] px-1.5 py-1 outline-none placeholder:text-[var(--color-faint)]"
+                className="mb-1 w-full rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-elevated)] px-1.5 py-1 outline-none placeholder:text-[var(--color-faint)]"
               />
             )}
           </div>
@@ -141,10 +154,10 @@ export function Sidebar() {
                 key={d}
                 onClick={() => selectDatabase(d)}
                 title={d}
-                className={`flex w-full items-center gap-1.5 rounded px-1.5 py-[0.15rem] text-left ${
+                className={`flex w-full items-center gap-1.5 rounded-lg px-2 py-[0.2rem] text-left ${
                   d === activeDatabase
-                    ? 'bg-[var(--color-accent-dim)]/45'
-                    : 'hover:bg-[var(--color-elevated)]'
+                    ? 'bg-[var(--color-accent-dim)]/55 font-bold'
+                    : 'hover:bg-[var(--color-elevated)] hover:shadow-xs'
                 }`}
               >
                 <span className="shrink-0 text-[var(--color-faint)]">▪</span>
@@ -170,7 +183,7 @@ export function Sidebar() {
               placeholder="Filter objects…"
               spellCheck={false}
               aria-label="Filter objects"
-              className="w-full rounded border border-[var(--color-border-strong)] bg-[var(--color-elevated)] px-1.5 py-1 outline-none placeholder:text-[var(--color-faint)]"
+              className="w-full rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-elevated)] px-1.5 py-1 outline-none placeholder:text-[var(--color-faint)]"
             />
           </div>
 
@@ -183,8 +196,14 @@ export function Sidebar() {
               if (!list || list.length === 0) return null
               return (
                 <section key={type} className="mt-2">
-                  <h3 className="px-1.5 pb-0.5 font-semibold tracking-wider text-[var(--color-faint)] uppercase">
-                    {GROUP_LABEL[type]} <span className="opacity-60">{list.length}</span>
+                  <h3 className="flex items-center gap-1.5 px-2 pb-1 font-bold tracking-wider text-[var(--color-faint)] uppercase">
+                    {GROUP_LABEL[type]}
+                    <span
+                      className="rounded-full px-1.5 font-semibold text-[var(--color-text)]/70"
+                      style={{ background: GROUP_TINT[type] }}
+                    >
+                      {list.length}
+                    </span>
                   </h3>
                   {list.map((o) => {
                     const qualified = qualifiedName(o)
@@ -193,10 +212,10 @@ export function Sidebar() {
                       <button
                         onClick={() => openObject(o)}
                         title={qualified}
-                        className={`flex w-full items-center gap-1.5 rounded px-1.5 py-[0.15rem] text-left ${
+                        className={`flex w-full items-center gap-1.5 rounded-lg px-2 py-[0.2rem] text-left ${
                           active
-                            ? 'bg-[var(--color-accent-dim)]/45'
-                            : 'hover:bg-[var(--color-elevated)]'
+                            ? 'bg-[var(--color-accent-dim)]/55 font-bold text-[var(--color-accent)]'
+                            : 'hover:bg-[var(--color-elevated)] hover:shadow-xs'
                         }`}
                       >
                         <span className="shrink-0 text-[var(--color-faint)]">
@@ -267,7 +286,7 @@ function Section({
         <button
           onClick={() => toggleSection(id)}
           aria-expanded={!collapsed}
-          className="flex flex-1 items-center gap-1 px-2 py-1.5 text-left font-semibold tracking-wider text-[var(--color-faint)] uppercase hover:text-[var(--color-text)]"
+          className="flex flex-1 items-center gap-1 px-2.5 py-2 text-left font-bold tracking-wider text-[var(--color-faint)] uppercase hover:text-[var(--color-accent)]"
         >
           <span className="inline-block w-3 shrink-0">{collapsed ? '▸' : '▾'}</span>
           {label}
@@ -277,7 +296,7 @@ function Section({
           <button
             onClick={action.onClick}
             title={action.title}
-            className="mr-1 rounded px-1.5 text-[var(--color-muted)] hover:bg-[var(--color-elevated)] hover:text-[var(--color-text)]"
+            className="mr-2 rounded-full bg-[var(--color-elevated)] px-2 leading-6 font-bold text-[var(--color-muted)] shadow-xs hover:bg-[var(--color-accent)] hover:text-white"
           >
             {action.label}
           </button>
