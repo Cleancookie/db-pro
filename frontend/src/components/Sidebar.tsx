@@ -68,7 +68,7 @@ export function Sidebar() {
     // out of the indentation of everything below.
     <aside
       style={{ width: resize.size }}
-      className={`chrome relative flex shrink-0 flex-col overflow-hidden border-r border-[var(--color-border)] bg-[var(--color-panel)]/70 ${
+      className={`chrome relative flex shrink-0 flex-col overflow-hidden border-r border-[var(--color-border)] bg-[var(--color-panel)] ${
         resize.dragging ? '' : 'transition-[width] duration-75'
       }`}
     >

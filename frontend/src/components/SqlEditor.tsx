@@ -44,7 +44,7 @@ export function SqlEditor() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="chrome flex items-center gap-2 border-b border-[var(--color-border)] bg-[var(--color-panel)]/70 px-3 py-2">
+      <div className="chrome flex items-center gap-2 border-b border-[var(--color-border)] bg-[var(--color-panel)] px-3 py-2">
         <span className="font-semibold tracking-wider text-[var(--color-faint)] uppercase">
           SQL
         </span>
@@ -95,7 +95,7 @@ export function SqlEditor() {
           several times over, and before this the later answers were dropped
           on the floor. Hidden for the single result that most runs produce. */}
       {sqlResults.length > 1 && (
-        <Highlight className="chrome flex shrink-0 items-center gap-1 overflow-x-auto border-b border-[var(--color-border)] bg-[var(--color-panel)]/70 px-2 py-1.5">
+        <Highlight className="chrome flex shrink-0 items-center gap-1 overflow-x-auto border-b border-[var(--color-border)] bg-[var(--color-panel)] px-2 py-1.5">
           {sqlResults.map((r, i) => (
             <button
               key={i}

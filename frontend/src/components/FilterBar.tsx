@@ -53,7 +53,7 @@ export function FilterBar() {
   )
 
   return (
-    <div className="chrome flex items-center gap-2.5 border-b border-[var(--color-border)] bg-[var(--color-panel)]/70 px-3 py-2">
+    <div className="chrome flex items-center gap-2.5 border-b border-[var(--color-border)] bg-[var(--color-panel)] px-3 py-2">
       {/* The open table's name. It used to live in the top bar; with that gone
           this is the row that is always above the grid, and the name belongs
           next to the filter that applies to it. */}

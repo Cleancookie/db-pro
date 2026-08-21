@@ -80,14 +80,14 @@ export function ActivityTray() {
         (status.cancelling > 0 ? ` · ${status.cancelling} cancelling` : '')
 
   return (
-    <div className="chrome relative shrink-0 border-t border-[var(--color-border)] bg-[var(--color-panel)]/70">
+    <div className="chrome relative shrink-0 border-t border-[var(--color-border)] bg-[var(--color-panel)]">
       {open && (
         <div
           // Height is inline because it is dragged. Capped by the viewport as
           // well as by the setting: a height saved on a large monitor must not
           // bury the grid on a small one.
           style={{ height: `min(${resize.size}px, 80vh)` }}
-          className="absolute inset-x-0 bottom-full flex flex-col border-t border-[var(--color-border)] bg-[var(--color-panel)]/95 shadow-[0_-10px_30px_rgb(var(--color-shadow)/0.16)] backdrop-blur-sm"
+          className="absolute inset-x-0 bottom-full flex flex-col border-t border-[var(--color-border)] bg-[var(--color-panel)] shadow-[0_-10px_30px_rgb(var(--color-shadow)/0.16)]"
         >
           {/* Dragging the top edge upwards makes the tray taller, hence invert. */}
           <Resizer {...resize} axis="y" invert label="Resize the activity tray" className="top-0" />
@@ -127,8 +127,8 @@ export function ActivityTray() {
       <button
         onClick={() => setTrayOpen(!open)}
         aria-expanded={open}
-        title="Query activity (Ctrl+J)"
-        className="flex h-6 w-full items-center gap-2 px-3 hover:bg-[var(--color-elevated)]/70"
+        title="Query activity (Ctrl+`)"
+        className="flex h-6 w-full items-center gap-2 px-3 hover:bg-[var(--color-elevated)]"
       >
         <span className="text-[var(--color-faint)]">{open ? '▾' : '▸'}</span>
         <span className="font-semibold tracking-wider text-[var(--color-faint)] uppercase">
@@ -150,7 +150,7 @@ export function ActivityTray() {
             transportName === 'http' ? 'ml-3' : 'ml-auto'
           }`}
         >
-          Ctrl+J
+          Ctrl+`
         </span>
       </button>
     </div>
@@ -300,7 +300,7 @@ export function ConfirmCancelDialog({ queryId, sql }: { queryId: string; sql: st
           The statement is stopped at the server. A write that is part-way through is rolled back by
           the database, not by this app.
         </p>
-        <pre className="max-h-32 overflow-auto rounded-xl bg-[var(--color-panel)]/60 p-3 font-[var(--font-mono)] whitespace-pre-wrap text-[var(--color-muted)]">
+        <pre className="max-h-32 overflow-auto rounded-xl bg-[var(--color-panel)] p-3 font-[var(--font-mono)] whitespace-pre-wrap text-[var(--color-muted)]">
           {sql}
         </pre>
       </div>

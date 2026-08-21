@@ -6,7 +6,7 @@ Built as a replacement for TablePlus. Supports **MySQL/MariaDB, PostgreSQL, SQL 
 
 ## Why command-palette-first
 
-There is no menu bar to hunt through. `Ctrl+K` opens the palette and everything is
+There is no menu bar to hunt through. `Ctrl+P` opens the palette and everything is
 reachable from it — connect, switch database, open a table, run a query, change page
 size. The palette is context-aware: what it offers depends on what you have open.
 
@@ -28,7 +28,8 @@ MVP walking skeleton. Working end-to-end:
 
 | Key | Action |
 | --- | --- |
-| `Ctrl+K` | Command palette |
+| `Ctrl+P`  /  `Ctrl+Shift+P` | Go-to palette / command palette |
+| `Ctrl+H` `Ctrl+J` `Ctrl+K` `Ctrl+L` | Move a cell in the grid — hjkl |
 | `Ctrl+F` | Focus the WHERE filter |
 | `Ctrl+E` | Toggle SQL editor |
 | `Ctrl+Enter` | Run query (in SQL editor) |

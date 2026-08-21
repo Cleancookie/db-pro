@@ -134,7 +134,7 @@ Where those went, since "it was removed" is the wrong answer for some of them:
 | Was in the header | Now |
 | --- | --- |
 | Settings cog | `Ctrl+,`, or "Settings" in the action palette |
-| `Ctrl+K` button | The palettes themselves, advertised on the empty state |
+| Palette button | The palettes themselves, advertised on the empty state |
 | Active table name | The filter row, next to the `WHERE` it applies to |
 | "working…" | The tray's indeterminate bar, which is the same fact with more detail |
 | "dev (browser)" | The tray strip, and only in the browser transport |
@@ -150,10 +150,15 @@ keystrokes, and the relative cutoff in `fuzzy.ts` could not help — the lists a
 not comparable, so a strong table match was suppressing weak-but-wanted
 commands and vice versa. Splitting them is what makes two characters enough.
 
-`Ctrl+K` still opens the "go" palette: it was the only palette key before the
-split and is the one in most people's fingers. `Ctrl+Shift+P` also switches
-between the two while one is open; `Ctrl+P` cannot, because inside a palette it
-is already the emacs-style move-up binding.
+`Ctrl+K` used to open the "go" palette as well, as the only palette key before
+the split. It was given up — along with `Ctrl+J`, which was the tray — so that
+the grid could take `Ctrl+H`/`J`/`K`/`L` for movement: hjkl is only worth having
+if all four letters sit on the same modifier, and a keyboard-first grid is where
+a hand should not have to leave the home row. The tray moved to ``Ctrl+` ``, and
+the palette moves on `Ctrl+J`/`K` too, so one movement pair works everywhere.
+
+`Ctrl+Shift+P` also switches between the two while one is open; `Ctrl+P` cannot,
+because inside a palette it is already the emacs-style move-up binding.
 
 ## No tabs, so the palette remembers
 

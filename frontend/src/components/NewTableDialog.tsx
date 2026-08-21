@@ -237,7 +237,7 @@ export function NewTableDialog({ schema }: { schema: string }) {
             {previewError}
           </p>
         ) : (
-          <pre className="max-h-40 overflow-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-panel)]/60 px-3 py-2 font-[var(--font-mono)] whitespace-pre text-[var(--color-muted)]">
+          <pre className="max-h-40 overflow-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-panel)] px-3 py-2 font-[var(--font-mono)] whitespace-pre text-[var(--color-muted)]">
             {preview || 'Name the table and fill in a column to see the statement.'}
           </pre>
         )}
@@ -252,7 +252,7 @@ function blankColumn(): NewColumn {
 }
 
 const inputClass =
-  'rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-panel)]/60 px-2 py-1.5 outline-none placeholder:text-[var(--color-faint)]'
+  'rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-panel)] px-2 py-1.5 outline-none placeholder:text-[var(--color-faint)]'
 
 function Field({
   label,

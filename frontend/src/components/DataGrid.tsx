@@ -2,6 +2,7 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { isTypingTarget } from '../dom'
 import { inRect, rectOf, type CellPos, type Rect } from '../selection'
+import { measuredSpan, offsetToShow, scrollTo, uniformSpan } from '../scroll'
 import { useStore, type ResultSource } from '../store'
 import { ContextMenu, type MenuItem } from '../ui'
 import type { Cell, Column, ResultColumn, ResultSet, Sort } from '../types'
@@ -135,6 +136,10 @@ export function DataGrid({
     getScrollElement: () => scrollRef.current,
     estimateSize: () => gm.rowHeight,
     overscan: 12,
+    // The rows start below the sticky header, not at the top of the scroll
+    // element. Without this the virtualiser's coordinates are a header out and
+    // its window drifts off the visible rows.
+    scrollMargin: gm.headerHeight,
   })
 
   // Row height changes with the font size, so the virtualiser has to remeasure
@@ -150,15 +155,28 @@ export function DataGrid({
     clearSelection()
   }, [result, clearSelection])
 
-  // Keeps the focused cell on screen when it moved by keyboard. The row
-  // virtualiser has to be told, since the target row may not be rendered at all;
-  // the horizontal axis is plain layout here, so the element handles itself once
-  // it exists.
+  // Keeps the focused cell on screen when it moved by keyboard, whole rather
+  // than merely touching the edge. Both axes are worked out from the geometry
+  // rather than left to scrollToIndex or scrollIntoView: neither knows the
+  // sticky header covers the top of the viewport, so both would happily stop
+  // with the cell behind it. See frontend/src/scroll.ts.
   useEffect(() => {
-    if (!focus || transposed) return
-    virtualizer.scrollToIndex(focus.row, { align: 'auto' })
-    selectedRef.current?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
-  }, [focus, transposed, virtualizer])
+    const el = scrollRef.current
+    if (!focus || transposed || !el) return
+    scrollTo(
+      el,
+      offsetToShow(
+        { offset: el.scrollTop, length: el.clientHeight, sticky: gm.headerHeight },
+        uniformSpan(focus.row, gm.rowHeight, gm.headerHeight),
+      ),
+      // The row-number gutter scrolls with the rows in this orientation, so
+      // nothing covers the near edge horizontally.
+      offsetToShow(
+        { offset: el.scrollLeft, length: el.clientWidth, sticky: 0 },
+        measuredSpan(focus.col, widths, gm.gutter),
+      ),
+    )
+  }, [focus, transposed, gm, widths])
 
   // Ctrl+C copies the selection, Enter opens the focused cell, and the arrows
   // move — with shift held, they extend the range instead. Copying what you are
@@ -191,9 +209,14 @@ export function DataGrid({
       const cur = sel.focus
 
       // Arrow movement, mapped through the orientation: down is the next row
-      // when rows run across, and the next column when they run down.
-      const step = ARROWS[e.key]
-      if (step && !mod) {
+      // when rows run across, and the next column when they run down. Ctrl+hjkl
+      // is the same movement — the app is keyboard-first, and a hand that never
+      // leaves the home row is the whole argument for it. Select-all keeps
+      // Ctrl+A above, so only these four letters are claimed.
+      // Ctrl+arrow stays pagination, which is why the modifier picks the map
+      // rather than being tolerated by both.
+      const step = mod ? VIM[e.key.toLowerCase()] : ARROWS[e.key]
+      if (step) {
         const d = transposed ? { row: step.col, col: step.row } : step
         const pos = {
           row: clamp(cur.row + d.row, 0, result.rows.length - 1),
@@ -305,7 +328,7 @@ export function DataGrid({
             never reach the menu. */}
         <ContextMenu items={headerItems} heading={headerName}>
           <div
-            className="chrome sticky top-0 z-10 flex border-b border-[var(--color-border-strong)] bg-[var(--color-panel)]/90 font-bold backdrop-blur-sm"
+            className="chrome sticky top-0 z-10 flex border-b border-[var(--color-border-strong)] bg-[var(--color-panel)] font-bold"
             style={{ height: gm.headerHeight }}
           >
             <div
@@ -370,7 +393,7 @@ export function DataGrid({
                     v.index % 2 === 1 ? 'bg-[var(--color-row-alt)]' : ''
                   } hover:bg-[var(--color-accent-dim)]/25`}
                   style={{
-                    top: v.start,
+                    top: v.start - gm.headerHeight,
                     height: v.size,
                     left: 0,
                     right: 0,
@@ -425,6 +448,14 @@ const ARROWS: Record<string, { row: number; col: number }> = {
   ArrowDown: { row: 1, col: 0 },
   ArrowLeft: { row: 0, col: -1 },
   ArrowRight: { row: 0, col: 1 },
+}
+
+/** The same steps on hjkl, taken with the modifier held. */
+const VIM: Record<string, { row: number; col: number }> = {
+  k: ARROWS.ArrowUp,
+  j: ARROWS.ArrowDown,
+  h: ARROWS.ArrowLeft,
+  l: ARROWS.ArrowRight,
 }
 
 function clamp(n: number, lo: number, hi: number): number {
@@ -521,11 +552,16 @@ function RecordsGrid({
     return Math.round(Math.min(gm.maxCol, Math.max(gm.minCol, longest * gm.charPx + gm.padPx)))
   }, [result.rows, gm])
 
+  // Both axes start inside the sticky chrome — the rows below the record
+  // numbers, the records right of the column names — and both virtualisers are
+  // told so, or their windows sit a header and a label column off the content
+  // they are meant to cover.
   const rowV = useVirtualizer({
     count: meta.length,
     getScrollElement: () => scrollRef.current,
     estimateSize: () => gm.rowHeight,
     overscan: 12,
+    scrollMargin: gm.headerHeight,
   })
 
   const colV = useVirtualizer({
@@ -534,6 +570,7 @@ function RecordsGrid({
     getScrollElement: () => scrollRef.current,
     estimateSize: () => cellWidth,
     overscan: 4,
+    scrollMargin: labelWidth,
   })
 
   // Both measurements are derived from the font size and the values, so a
@@ -547,13 +584,27 @@ function RecordsGrid({
     scrollRef.current?.scrollTo({ top: 0, left: 0 })
   }, [result])
 
-  // Both axes are virtualised here, so both have to be told where the focus
-  // went: the row is a source column, the column is a source row.
+  // Where the focus went, on both axes at once: the row is a source column, the
+  // column is a source row. One scroll of the shared element rather than two
+  // scrollToIndex calls — those fought each other, and neither allowed for the
+  // record-number header or the sticky column-name strip, which is how a cell
+  // could end up "in view" with a pixel of it showing. Both edges of the cell
+  // on both axes is all four of its corners.
   useEffect(() => {
-    if (!focus) return
-    rowV.scrollToIndex(focus.col, { align: 'auto' })
-    colV.scrollToIndex(focus.row, { align: 'auto' })
-  }, [focus, rowV, colV])
+    const el = scrollRef.current
+    if (!focus || !el) return
+    scrollTo(
+      el,
+      offsetToShow(
+        { offset: el.scrollTop, length: el.clientHeight, sticky: gm.headerHeight },
+        uniformSpan(focus.col, gm.rowHeight, gm.headerHeight),
+      ),
+      offsetToShow(
+        { offset: el.scrollLeft, length: el.clientWidth, sticky: labelWidth },
+        uniformSpan(focus.row, cellWidth, labelWidth),
+      ),
+    )
+  }, [focus, gm, labelWidth, cellWidth])
 
   const cols = colV.getVirtualItems()
   const totalWidth = labelWidth + colV.getTotalSize()
@@ -564,7 +615,7 @@ function RecordsGrid({
         {/* The record numbers. Sticky on both axes, so the number of the record
             you are reading stays put whichever way you scroll. */}
         <div
-          className="chrome sticky top-0 z-20 flex border-b border-[var(--color-border-strong)] bg-[var(--color-panel)]/90 backdrop-blur-sm"
+          className="chrome sticky top-0 z-20 flex border-b border-[var(--color-border-strong)] bg-[var(--color-panel)]"
           style={{ height: gm.headerHeight, width: totalWidth }}
         >
           <div
@@ -579,7 +630,7 @@ function RecordsGrid({
                 key={c.key}
                 className="absolute top-0 truncate border-r border-[var(--color-border)] px-2 text-right text-[var(--color-faint)]"
                 style={{
-                  left: c.start,
+                  left: c.start - labelWidth,
                   width: c.size,
                   height: gm.headerHeight,
                   lineHeight: `${gm.headerHeight}px`,
@@ -599,7 +650,12 @@ function RecordsGrid({
                 <div
                   key={v.key}
                   className={`absolute flex ${v.index % 2 === 1 ? 'bg-[var(--color-row-alt)]' : ''}`}
-                  style={{ top: v.start, height: v.size, left: 0, width: totalWidth }}
+                  style={{
+                    top: v.start - gm.headerHeight,
+                    height: v.size,
+                    left: 0,
+                    width: totalWidth,
+                  }}
                 >
                   {/* The name of the column this record's value belongs to.
                       Sticky left for the same reason the header is sticky top:
@@ -639,7 +695,7 @@ function RecordsGrid({
                             m.numeric ? 'text-right' : ''
                           } ${cellSelectionClass(isFocus, inRange)}`}
                           style={{
-                            left: c.start,
+                            left: c.start - labelWidth,
                             width: c.size,
                             height: v.size,
                             lineHeight: `${gm.rowHeight}px`,

@@ -79,7 +79,7 @@ export function Dialog({
           {children}
 
           {footer && (
-            <div className="sticky bottom-0 flex items-center gap-2 border-t border-[var(--color-border)] bg-[var(--color-panel)]/60 px-5 py-3.5">
+            <div className="sticky bottom-0 flex items-center gap-2 border-t border-[var(--color-border)] bg-[var(--color-panel)] px-5 py-3.5">
               {footer}
             </div>
           )}
@@ -109,7 +109,7 @@ export function FormDialog({
       >
         {children}
         {footer && (
-          <div className="sticky bottom-0 flex items-center gap-2 border-t border-[var(--color-border)] bg-[var(--color-panel)]/60 px-5 py-3.5">
+          <div className="sticky bottom-0 flex items-center gap-2 border-t border-[var(--color-border)] bg-[var(--color-panel)] px-5 py-3.5">
             {footer}
           </div>
         )}

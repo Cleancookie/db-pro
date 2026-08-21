@@ -89,11 +89,24 @@ export function CommandPalette() {
         e.preventDefault()
         run(results[selected]?.item)
         break
-      // Ctrl+N / Ctrl+P for people who never leave the home row.
+      // Ctrl+N / Ctrl+P for people who never leave the home row, and Ctrl+J /
+      // Ctrl+K for the same reason the grid moves on hjkl: one movement pair
+      // has to work everywhere, or it is not muscle memory. H and L are left
+      // alone — a palette is one column, so there is nowhere sideways to go.
       case 'n':
+      case 'N':
+      case 'j':
+      case 'J':
         if (e.ctrlKey) {
           e.preventDefault()
           setSelected((i) => Math.min(i + 1, results.length - 1))
+        }
+        break
+      case 'k':
+      case 'K':
+        if (e.ctrlKey) {
+          e.preventDefault()
+          setSelected((i) => Math.max(i - 1, 0))
         }
         break
       case 'P':

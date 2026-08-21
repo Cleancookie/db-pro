@@ -41,7 +41,7 @@ drifted before, always partway through a long session.
 - One file per dialect in `internal/driver/`, behind the single `Driver`
   interface. A dialect quirk belongs in that dialect's file.
 - Frontend follows the global style guide; the palette is the primary surface,
-  so a new capability should be reachable from `Ctrl+K`.
+  so a new capability should be reachable from `Ctrl+P` / `Ctrl+Shift+P`.
 - Requirements and invariants that must not regress: `docs/REQUIREMENTS.md`.
   Wanted but unbuilt: `docs/WISHLIST.md`.
 

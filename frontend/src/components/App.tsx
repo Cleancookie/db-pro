@@ -136,7 +136,7 @@ function EmptyState() {
       <p className="font-bold text-[var(--color-text)]">Nothing open yet</p>
       {/* With no top bar, this is where the two palettes are advertised. It is
           the first screen of a palette-first app, so it had better say how. */}
-      <div className="flex flex-col gap-2 rounded-2xl border border-[var(--color-border)] bg-[var(--color-elevated)]/70 px-5 py-4 shadow-sm">
+      <div className="flex flex-col gap-2 rounded-2xl border border-[var(--color-border)] bg-[var(--color-elevated)] px-5 py-4 shadow-sm">
         <p className="flex items-center gap-2">
           <Key>Ctrl+P</Key> to open a connection, database or table
         </p>
@@ -183,13 +183,11 @@ function useGlobalHotkeys() {
         return
       }
 
-      // Ctrl+K keeps working, and opens the one people reach for most. It was
-      // the only palette key before the split, so it stays as muscle memory.
-      if (mod && e.key.toLowerCase() === 'k') {
-        e.preventDefault()
-        s.setPalette(s.palette === null ? 'go' : null)
-        return
-      }
+      // Ctrl+K used to open the "go" palette as well, and Ctrl+J the tray. Both
+      // letters now belong to the grid's vim movement — Ctrl+H/J/K/L — because
+      // hjkl is only worth having if all four are the same modifier. The
+      // palettes keep Ctrl+P and Ctrl+Shift+P, which were always the primary
+      // pair; the tray moved to Ctrl+` , as a bottom panel is in an editor.
 
       // Ctrl+, is conventional for preferences and is worth honouring even
       // from inside a dialog, so it is handled before the modal guard.
@@ -224,8 +222,8 @@ function useGlobalHotkeys() {
         return
       }
 
-      // Ctrl+J for the bottom tray, as in every editor with a bottom panel.
-      if (mod && e.key.toLowerCase() === 'j') {
+      // Ctrl+` for the bottom tray, as in every editor with a bottom panel.
+      if (mod && e.key === '`') {
         e.preventDefault()
         s.setTrayOpen(!s.trayOpen)
         return

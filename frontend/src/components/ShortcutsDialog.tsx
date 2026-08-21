@@ -4,7 +4,6 @@ import { Dialog, dialogButton } from '../ui'
 const SHORTCUTS: [string, string][] = [
   ['Ctrl+P', 'Go to a connection, database or table'],
   ['Ctrl+Shift+P', 'Run a command — settings, editor, activity'],
-  ['Ctrl+K', 'Go to… (the palette key from before the split)'],
   ['Ctrl+,', 'Settings'],
   ['Ctrl+F  /  /', 'Focus the WHERE filter'],
   ['Enter', 'Apply the filter'],
@@ -12,15 +11,16 @@ const SHORTCUTS: [string, string][] = [
   ['Ctrl+Enter', 'Run the query (in the editor)'],
   ['Ctrl+R', 'Refresh the current rows'],
   ['Ctrl+←  /  Ctrl+→', 'Previous / next page'],
-  ['Ctrl+J', 'Toggle the activity tray (query log)'],
+  ['Ctrl+`', 'Toggle the activity tray (query log)'],
   ['Ctrl+Shift+A', 'Open connections'],
   ['Tab', 'Transpose the grid — column names down the side, one record per column'],
   ['Right-click  /  Menu', 'Cell actions in the grid, connection actions in the sidebar'],
   ['Click  /  Shift+click', 'Select a cell, then extend the range to another'],
+  ['Ctrl+H J K L', 'Move a cell — hjkl, as the arrows do; add Shift to extend'],
   ['Shift+arrows  /  Ctrl+A', 'Extend the range by cell / select the whole result'],
   ['Ctrl+C', 'Copy — a cell as-is, one column as an IN list, wider as CSV'],
   ['Enter  /  double-click', 'Open the selected cell (JSON viewer, full value)'],
-  ['↑ ↓  /  Ctrl+P  Ctrl+N', 'Move through the palette'],
+  ['↑ ↓  /  Ctrl+P N J K', 'Move through the palette'],
   ['Esc', 'Close, or revert an unapplied filter'],
 ]
 

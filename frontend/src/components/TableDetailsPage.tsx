@@ -289,7 +289,7 @@ export function TableDetailsPage() {
 
       {detail.definition && (
         <Section title="Definition">
-          <pre className="overflow-x-auto rounded-lg bg-[var(--color-panel)]/70 p-3 font-mono text-[var(--color-text)]">
+          <pre className="overflow-x-auto rounded-lg bg-[var(--color-panel)] p-3 font-mono text-[var(--color-text)]">
             {detail.definition}
           </pre>
         </Section>

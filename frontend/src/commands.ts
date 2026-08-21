@@ -195,7 +195,7 @@ export function buildActionCommands(s: Store): Command[] {
     title: s.trayOpen ? 'Hide the activity tray' : 'Show running queries',
     subtitle: 'In-flight queries, with elapsed time and cancel',
     group: 'Query',
-    shortcut: 'Ctrl+J',
+    shortcut: 'Ctrl+`',
     candidate: {
       name: 'Running queries',
       keywords: 'activity tray monitor cancel kill progress loading elapsed',

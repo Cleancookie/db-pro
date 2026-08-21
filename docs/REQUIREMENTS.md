@@ -152,7 +152,7 @@ click on a cell to open in the cell viewer"*.
 > timer on each query
 
 Delivered as `frontend/src/components/ActivityTray.tsx`: a strip along the
-bottom on every view, collapsed by default, `Ctrl+J` to expand. The strip says
+bottom on every view, collapsed by default, ``Ctrl+` `` to expand. The strip says
 how many queries are running and how long the oldest has been going; expanded,
 each query gets a ticking timer, an indeterminate bar and a Cancel.
 

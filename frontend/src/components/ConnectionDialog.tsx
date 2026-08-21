@@ -212,7 +212,7 @@ export function ConnectionDialog({ existing }: { existing: Connection | null }) 
 }
 
 const inputClass =
-  'w-full rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-panel)]/60 px-3 py-1.5 outline-none placeholder:text-[var(--color-faint)] focus:bg-[var(--color-elevated)]'
+  'w-full rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-panel)] px-3 py-1.5 outline-none placeholder:text-[var(--color-faint)] focus:bg-[var(--color-elevated)]'
 
 function Field({
   label,
