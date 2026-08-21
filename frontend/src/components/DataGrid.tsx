@@ -74,6 +74,11 @@ export function DataGrid({
   // The focused cell's own element, so the keyboard menu key can open the
   // context menu where the cell is rather than at the pointer's last position.
   const selectedRef = useRef<HTMLDivElement | null>(null)
+  // Whether the move that set the current focus came from a held key. Read by
+  // the scroll effects below, which must not animate a repeat — autorepeat is
+  // an order of magnitude faster than a smooth scroll and would cancel it on
+  // every step. See frontend/src/scroll.ts.
+  const repeatRef = useRef(false)
   const rootPx = useStore((s) => s.settings.fontSizePx)
   const transposed = useStore((s) => s.transposed)
   const gm = useMemo(() => metrics(rootPx), [rootPx])
@@ -95,6 +100,7 @@ export function DataGrid({
 
   /** A click (or a shift-click, which extends instead of starting over). */
   const pick = (row: number, col: number, extend: boolean) => {
+    repeatRef.current = false
     if (extend) extendSelection(source, { row, col })
     else selectCell(source, { row, col })
   }
@@ -175,6 +181,7 @@ export function DataGrid({
         { offset: el.scrollLeft, length: el.clientWidth, sticky: 0 },
         measuredSpan(focus.col, widths, gm.gutter),
       ),
+      repeatRef.current,
     )
   }, [focus, transposed, gm, widths])
 
@@ -223,6 +230,7 @@ export function DataGrid({
           col: clamp(cur.col + d.col, 0, result.columns.length - 1),
         }
         e.preventDefault()
+        repeatRef.current = e.repeat
         if (e.shiftKey) s.extendSelection(source, pos)
         else s.selectCell(source, pos)
         return
@@ -299,6 +307,7 @@ export function DataGrid({
         rect={rect}
         pick={pick}
         selectedRef={selectedRef}
+        repeatRef={repeatRef}
         onOpenCell={onOpenCell}
         menuItems={menuItems}
         menuHeading={menuHeading}
@@ -494,6 +503,7 @@ interface RecordsProps {
   rect: Rect | null
   pick: (row: number, col: number, extend: boolean) => void
   selectedRef: React.MutableRefObject<HTMLDivElement | null>
+  repeatRef: React.MutableRefObject<boolean>
   onOpenCell?: (rowIndex: number, colIndex: number) => void
   menuItems: MenuItem[] | null
   menuHeading?: string
@@ -523,6 +533,7 @@ function RecordsGrid({
   rect,
   pick,
   selectedRef,
+  repeatRef,
   onOpenCell,
   menuItems,
   menuHeading,
@@ -603,8 +614,9 @@ function RecordsGrid({
         { offset: el.scrollLeft, length: el.clientWidth, sticky: labelWidth },
         uniformSpan(focus.row, cellWidth, labelWidth),
       ),
+      repeatRef.current,
     )
-  }, [focus, gm, labelWidth, cellWidth])
+  }, [focus, gm, labelWidth, cellWidth, repeatRef])
 
   const cols = colV.getVirtualItems()
   const totalWidth = labelWidth + colV.getTotalSize()

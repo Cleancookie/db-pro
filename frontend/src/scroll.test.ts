@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { measuredSpan, offsetToShow, uniformSpan, worthAnimating } from './scroll'
+import { measuredSpan, offsetToShow, smoothly, uniformSpan, worthAnimating } from './scroll'
 
 /**
  * The rule these pin down: the focused cell ends up whole and *below* the
@@ -58,5 +58,23 @@ describe('worthAnimating', () => {
 
   it('jumps a scroll of thousands of rows', () => {
     expect(worthAnimating(90_000, 400)).toBe(false)
+  })
+})
+
+describe('smoothly', () => {
+  const step = { dy: 26, dx: 0, height: 400, width: 800, repeat: false }
+
+  it('glides a single press', () => {
+    expect(smoothly(step, false)).toBe(true)
+  })
+
+  it('lands a held key at once, however short the hop', () => {
+    expect(smoothly({ ...step, repeat: true }, false)).toBe(false)
+  })
+
+  it('lands a long jump and a reduced-motion preference at once', () => {
+    expect(smoothly({ ...step, dy: 90_000 }, false)).toBe(false)
+    expect(smoothly({ ...step, dx: 90_000 }, false)).toBe(false)
+    expect(smoothly(step, true)).toBe(false)
   })
 })

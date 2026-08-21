@@ -72,21 +72,53 @@ export function reducedMotion(): boolean {
   return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
 }
 
+/** A correction to make, on both axes, with why it is being made. */
+export interface Correction {
+  dy: number
+  dx: number
+  height: number
+  width: number
+  /** The move came from a held key rather than a deliberate press. */
+  repeat: boolean
+}
+
+/**
+ * Whether a correction should glide rather than land at once.
+ *
+ * Held keys are the reason this is more than `worthAnimating` on each axis.
+ * Autorepeat arrives every 30ms or so and a smooth scroll takes ten times
+ * that, so every repeat cancels the animation before it has covered a row and
+ * restarts the easing from a standstill: the selection runs off down the result
+ * while the viewport crawls after it. A repeat therefore lands immediately, and
+ * only a single press glides. Reduced motion is passed in rather than read here
+ * so the rule stays a function of its arguments.
+ */
+export function smoothly(c: Correction, reduced: boolean): boolean {
+  if (c.repeat || reduced) return false
+  return worthAnimating(c.dy, c.height) && worthAnimating(c.dx, c.width)
+}
+
 /**
  * Scroll an element to an offset, animating the move when that helps.
  *
- * The one impure function here, and the only place the two rules above are
- * combined: a short hop glides, a long one and a reduced-motion preference
- * both land immediately. Doing nothing when already there matters — an
- * unconditional `scrollTo` during a smooth animation cancels it.
+ * The one impure function here, and the only place the rules above are applied:
+ * a short deliberate hop glides, while a long jump, a held key and a
+ * reduced-motion preference all land immediately. Doing nothing when already
+ * there matters — an unconditional `scrollTo` during a smooth animation
+ * cancels it.
  */
-export function scrollTo(el: HTMLElement, top: number, left: number): void {
+export function scrollTo(
+  el: HTMLElement,
+  top: number,
+  left: number,
+  repeat = false,
+): void {
   const dy = top - el.scrollTop
   const dx = left - el.scrollLeft
   if (dy === 0 && dx === 0) return
-  const smooth =
-    !reducedMotion() &&
-    worthAnimating(dy, el.clientHeight) &&
-    worthAnimating(dx, el.clientWidth)
+  const smooth = smoothly(
+    { dy, dx, height: el.clientHeight, width: el.clientWidth, repeat },
+    reducedMotion(),
+  )
   el.scrollTo({ top, left, behavior: smooth ? 'smooth' : 'auto' })
 }
