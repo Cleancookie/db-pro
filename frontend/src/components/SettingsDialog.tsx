@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { PAGE_SIZES, useStore } from '../store'
+import { applyTheme, THEMES } from '../themes'
 import { dialogButton, FormDialog } from '../ui'
 import type { Settings } from '../types'
 
@@ -20,12 +21,16 @@ export function SettingsDialog() {
   const patch = (p: Partial<Settings>) => {
     const next = { ...draft, ...p }
     setDraft(next)
-    // Live preview for the one setting whose effect is purely visual.
+    // Live preview for the settings whose effect is purely visual. Picking a
+    // theme from a list of names and waiting for Save to see it is guesswork —
+    // the whole question is what it looks like behind this dialog.
     if (p.fontSizePx != null) document.documentElement.style.fontSize = `${p.fontSizePx}px`
+    if (p.theme != null) applyTheme(p.theme)
   }
 
   const cancel = () => {
     document.documentElement.style.fontSize = `${saved.fontSizePx}px`
+    applyTheme(saved.theme)
     setDialog({ kind: 'none' })
   }
 
@@ -52,6 +57,43 @@ export function SettingsDialog() {
     >
 
         <Group label="Appearance">
+          {/* Not a Row: a theme is chosen by looking, so this is a grid of
+              swatches rather than a label with a select bolted to the right. */}
+          <fieldset className="min-w-0">
+            <legend className="mb-2">Theme</legend>
+            <div className="grid grid-cols-2 gap-2">
+              {THEMES.map((t) => {
+                const active = draft.theme === t.id
+                return (
+                  <button
+                    key={t.id}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => patch({ theme: t.id })}
+                    className={`flex items-center gap-2.5 rounded-xl border px-2.5 py-2 text-left ${
+                      active
+                        ? 'border-[var(--color-accent)] bg-[var(--color-accent-dim)]/40'
+                        : 'border-[var(--color-border)] hover:bg-[var(--color-accent-dim)]/20'
+                    }`}
+                  >
+                    {/* The literals here are the one honest exception to the
+                        tokens-only rule: a swatch has to show a theme that is
+                        not the one currently loaded. */}
+                    <span
+                      className="size-6 shrink-0 rounded-full border border-[var(--color-border-strong)]"
+                      style={{
+                        background: `linear-gradient(135deg, ${t.swatch.bg} 50%, ${t.swatch.accent} 50%)`,
+                      }}
+                    />
+                    <span className="min-w-0">
+                      <span className="block truncate font-semibold">{t.name}</span>
+                      <span className="block truncate text-[var(--color-faint)]">{t.note}</span>
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          </fieldset>
           <Row
             label="Interface size"
             hint="Scales the whole interface, not just text"

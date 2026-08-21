@@ -1,8 +1,10 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -60,5 +62,49 @@ func TestSavedTextCapSurvivesADefaultChange(t *testing.T) {
 	}
 	if got := store.Get().TextCapChars; got != DefaultSettings().TextCapChars {
 		t.Errorf("a file predating the setting got %d, want the default", got)
+	}
+}
+
+// A theme id is a CSS selector on the other side, so an unknown one leaves the
+// UI with no palette at all — a settings file from a newer build, or a typo in
+// a hand-edited one, must land back on the default rather than on nothing.
+func TestUnknownThemeFallsBack(t *testing.T) {
+	for _, in := range []string{"", "solarized", "Gruvbox-Dark"} {
+		s := DefaultSettings()
+		s.Theme = in
+		if got := s.clamp().Theme; got != DefaultSettings().Theme {
+			t.Errorf("theme %q clamped to %q, want the default", in, got)
+		}
+	}
+}
+
+func TestKnownThemesSurviveTheClamp(t *testing.T) {
+	for _, id := range ThemeIDs {
+		s := DefaultSettings()
+		s.Theme = id
+		if got := s.clamp().Theme; got != id {
+			t.Errorf("theme %q clamped to %q; it is in ThemeIDs and must be kept", id, got)
+		}
+	}
+}
+
+// The other half of the theme-id check; the TypeScript half is
+// frontend/src/themes.test.ts. Every id the app will accept needs a palette to
+// render, and a missing block is invisible at build time — the app just keeps
+// whichever theme was already on screen.
+func TestEveryThemeHasAPalette(t *testing.T) {
+	css, err := os.ReadFile(filepath.Join("..", "..", "frontend", "src", "index.css"))
+	if err != nil {
+		t.Fatalf("reading index.css: %v", err)
+	}
+	for _, id := range ThemeIDs {
+		// The default is the bare :root block, so it has no selector of its own.
+		if id == ThemeIDs[0] {
+			continue
+		}
+		want := fmt.Sprintf(":root[data-theme='%s']", id)
+		if !strings.Contains(string(css), want) {
+			t.Errorf("theme %q is offered but index.css has no %s block", id, want)
+		}
 	}
 }

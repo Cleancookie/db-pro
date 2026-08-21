@@ -87,7 +87,7 @@ export function ActivityTray() {
           // well as by the setting: a height saved on a large monitor must not
           // bury the grid on a small one.
           style={{ height: `min(${resize.size}px, 80vh)` }}
-          className="absolute inset-x-0 bottom-full flex flex-col border-t border-[var(--color-border)] bg-[var(--color-panel)]/95 shadow-[0_-10px_30px_rgba(88,75,145,0.16)] backdrop-blur-sm"
+          className="absolute inset-x-0 bottom-full flex flex-col border-t border-[var(--color-border)] bg-[var(--color-panel)]/95 shadow-[0_-10px_30px_rgb(var(--color-shadow)/0.16)] backdrop-blur-sm"
         >
           {/* Dragging the top edge upwards makes the tray taller, hence invert. */}
           <Resizer {...resize} axis="y" invert label="Resize the activity tray" className="top-0" />

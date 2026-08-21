@@ -99,6 +99,10 @@ is in the palette before it is in a menu.
 - **Schema changes from the object menu** — create a table, empty it, drop it,
   each a palette action the right-click menu also fires. Statements are built
   per dialect in `internal/driver/ddl.go`. `ALTER` is item 2 above.
+- **Themes** — Sherbet, Gruvbox (dark and light) and One Dark, picked from
+  Settings or straight from the palette. Nothing but `index.css` knows a
+  colour, so a new one is a block of custom properties; see the header of that
+  file. Persisted as `theme` in settings.
 
 All five are recorded in full, request verbatim and decisions taken, in
 `REQUIREMENTS.md` under 2026-08-17.

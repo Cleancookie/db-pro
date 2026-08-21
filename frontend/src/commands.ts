@@ -12,6 +12,7 @@ import { reportText } from './startup'
 import { objectBias, orderByRecency, refKey } from './recency'
 import { rectOf, rectSize } from './selection'
 import { PAGE_SIZES, type useStore } from './store'
+import { THEMES } from './themes'
 import type { ObjectType, SchemaObject } from './types'
 
 type Store = ReturnType<typeof useStore.getState>
@@ -450,10 +451,26 @@ export function buildActionCommands(s: Store): Command[] {
       name: 'Settings',
       // The cog in the top bar is gone, so this is the way in: worth matching
       // the names of the things inside the dialog too.
-      keywords: 'preferences options config font size page cap confirm system',
+      keywords: 'preferences options config font size page cap confirm system theme',
     },
     run: () => s.setDialog({ kind: 'settings' }),
   })
+
+  // One per theme rather than a "change theme" that opens the dialog. Switching
+  // is the entire action, it is instant, and typing "gruv" should do it — going
+  // by way of a modal to click a swatch is the slower path for the person who
+  // already knows which one they want.
+  for (const t of THEMES) {
+    if (t.id === s.settings.theme) continue
+    cmds.push({
+      id: `app:theme:${t.id}`,
+      title: `Theme: ${t.name}`,
+      subtitle: t.note,
+      group: 'App',
+      candidate: { name: t.name, keywords: `theme colour color palette appearance ${t.id}` },
+      run: () => void s.saveSettings({ ...s.settings, theme: t.id }),
+    })
+  }
 
   cmds.push({
     id: 'help:shortcuts',

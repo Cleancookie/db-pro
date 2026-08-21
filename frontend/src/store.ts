@@ -4,6 +4,7 @@ import { absoluteRowOffset, cellText, isCellTruncated } from './cells'
 import { RECENT_LIMIT, refKey } from './recency'
 import { describeCopy, rectOf, selectionText, type CellPos, type Selection } from './selection'
 import { mark, reportText } from './startup'
+import { applyTheme, DEFAULT_THEME } from './themes'
 import type {
   ActivityResult,
   Capabilities,
@@ -76,6 +77,7 @@ export type View = 'data' | 'sql' | 'activity' | 'details'
 export type SectionKey = 'connections' | 'databases' | 'objects'
 
 export const DEFAULT_SETTINGS: Settings = {
+  theme: DEFAULT_THEME,
   fontSizePx: 16,
   defaultPageSize: 100,
   paginationEnabled: true,
@@ -428,7 +430,7 @@ export const useStore = create<State>((set, get) => {
           pageSize: settings.defaultPageSize,
           paginationEnabled: settings.paginationEnabled,
         })
-        applyFontSize(settings.fontSizePx)
+        applyAppearance(settings)
         mark('config loaded')
         // Startup timing only exists in the webview — the boot and the bundle
         // parse both happen before Go runs again — so it is sent back to be
@@ -775,7 +777,7 @@ export const useStore = create<State>((set, get) => {
       try {
         const settings = await api.getSettings()
         set({ settings })
-        applyFontSize(settings.fontSizePx)
+        applyAppearance(settings)
       } catch (e) {
         get().pushToast('error', errorMessage(e))
       }
@@ -786,7 +788,7 @@ export const useStore = create<State>((set, get) => {
       try {
         const saved = await api.saveSettings(next)
         set({ settings: saved })
-        applyFontSize(saved.fontSizePx)
+        applyAppearance(saved)
         // The cap is applied by the query, so a changed cap only reaches the
         // grid on the next read. Doing it here saves the user wondering why
         // the setting appeared to do nothing.
@@ -1048,9 +1050,14 @@ export function useHasSchemas(): boolean {
 }
 
 /**
+ * Pushes the two purely visual settings onto <html>, which is where the CSS
+ * reads them from. Both are applied together because both arrive together:
+ * every path that produces a Settings — startup, reload, save — wants both.
+ *
  * The whole UI is sized in rem, so setting the root font size rescales
  * spacing and controls together rather than leaving big text in small boxes.
  */
-function applyFontSize(px: number) {
-  document.documentElement.style.fontSize = `${px}px`
+function applyAppearance(s: Settings) {
+  document.documentElement.style.fontSize = `${s.fontSizePx}px`
+  applyTheme(s.theme)
 }

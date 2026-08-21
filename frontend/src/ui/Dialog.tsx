@@ -121,7 +121,7 @@ export function FormDialog({
 /** Shared button styling, so dialog footers look the same everywhere. */
 export const dialogButton = {
   primary:
-    'rounded-xl bg-[var(--color-accent)] px-4 py-1.5 font-bold text-white shadow-sm disabled:opacity-40 enabled:hover:brightness-110 enabled:hover:shadow-md',
+    'rounded-xl bg-[var(--color-accent)] px-4 py-1.5 font-bold text-[var(--color-on-accent)] shadow-sm disabled:opacity-40 enabled:hover:brightness-110 enabled:hover:shadow-md',
   secondary:
     'rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-elevated)] px-4 py-1.5 font-semibold disabled:opacity-40 enabled:hover:border-[var(--color-accent)] enabled:hover:bg-[var(--color-accent-dim)]/30',
   ghost:
@@ -129,5 +129,5 @@ export const dialogButton = {
   danger:
     'rounded-xl border border-[var(--color-border-strong)] px-4 py-1.5 font-semibold text-[var(--color-danger)] hover:border-[var(--color-danger)] hover:bg-[var(--color-danger)]/10',
   dangerFilled:
-    'rounded-xl bg-[var(--color-danger)] px-4 py-1.5 font-bold text-white shadow-sm hover:brightness-110 hover:shadow-md',
+    'rounded-xl bg-[var(--color-danger)] px-4 py-1.5 font-bold text-[var(--color-on-accent)] shadow-sm hover:brightness-110 hover:shadow-md',
 } as const

@@ -2,16 +2,21 @@
 @import '@fontsource-variable/nunito';
 
 /*
- * "Sherbet" — one soft, light theme.
+ * Themes.
  *
- * A database GUI is looked at for hours, so the old rule still holds: the
- * chrome is low-contrast and the data is high-contrast, so the eye lands on
- * rows rather than on borders. What changed is the mood. The chrome is warm
- * paper with a lilac cast, surfaces that float are plain white, and every
- * accent is a pastel rather than a saturated signal colour.
+ * A database GUI is looked at for hours, so one rule holds across all of them:
+ * the chrome is low-contrast and the data is high-contrast, so the eye lands on
+ * rows rather than on borders.
  *
- * Everything below is a token. Components reference `var(--color-…)` and never
- * a literal, which is what makes a re-theme a change to this file alone.
+ * `@theme` below is "Sherbet" and doubles as the token *contract* — it is what
+ * declares the names to Tailwind, so every token a theme can set has to appear
+ * here. The alternatives are further down as `:root[data-theme='…']` blocks
+ * that re-declare the same custom properties; `store.applyTheme` writes the
+ * attribute onto <html> and nothing else changes.
+ *
+ * Adding a theme is: one block below, one entry in `src/themes.ts`, one id in
+ * `config.ThemeIDs`. Components reference `var(--color-…)` and never a literal,
+ * which is what keeps it to that.
  */
 @theme {
   /* Paper, panels, and the surfaces that float above them. */
@@ -36,8 +41,13 @@
   /* Periwinkle carries every "this one" — selection, focus, sort, match. */
   --color-accent: #7a68e8;
   /* The wash form of the accent, used as a background at partial opacity for
-     selected rows and highlighted menu items. */
+     selected rows and highlighted menu items, and at full opacity behind
+     ::selection. So it has to stay readable under `--color-text`: on a dark
+     theme this is a tinted near-background, not a bright accent. */
   --color-accent-dim: #cec3fb;
+  /* Ink for text sitting *on* a filled accent or danger button. Not always
+     white — a light theme's accent is dark, a dark theme's is bright. */
+  --color-on-accent: #ffffff;
 
   /* Status. Pastel-adjacent but darkened enough to be legible as text on
      paper; the /10–/20 background washes come from the same hue. */
@@ -74,15 +84,37 @@
   --radius-4xl: 2.2rem;
 
   /*
-   * Shadows are lilac, never grey. A neutral shadow over a warm page reads as
-   * dirt; tinting it towards the accent keeps the surface feeling lit.
+   * Shadows are tinted, never grey. A neutral shadow over a warm page reads as
+   * dirt; tinting it towards the theme keeps the surface feeling lit. Dark
+   * themes push this towards black instead, where a tint would look like haze.
+   *
+   * The scale is derived from one colour so a theme overrides `--color-shadow`
+   * and gets all six. The alphas are baked into the colour, so the elevation
+   * ramp lives in the opacity of each step below.
    */
-  --shadow-xs: 0 1px 2px rgba(88, 75, 145, 0.06);
-  --shadow-sm: 0 1px 3px rgba(88, 75, 145, 0.08);
-  --shadow-md: 0 4px 12px rgba(88, 75, 145, 0.1);
-  --shadow-lg: 0 10px 26px rgba(88, 75, 145, 0.14);
-  --shadow-xl: 0 18px 40px rgba(88, 75, 145, 0.16);
-  --shadow-2xl: 0 26px 60px rgba(88, 75, 145, 0.2);
+  --color-shadow: 88 75 145;
+  --shadow-xs: 0 1px 2px rgb(var(--color-shadow) / 0.06);
+  --shadow-sm: 0 1px 3px rgb(var(--color-shadow) / 0.08);
+  --shadow-md: 0 4px 12px rgb(var(--color-shadow) / 0.1);
+  --shadow-lg: 0 10px 26px rgb(var(--color-shadow) / 0.14);
+  --shadow-xl: 0 18px 40px rgb(var(--color-shadow) / 0.16);
+  --shadow-2xl: 0 26px 60px rgb(var(--color-shadow) / 0.2);
+  /* Same trick for the focus halo, which is the accent at low alpha. */
+  --color-accent-rgb: 122 104 232;
+
+  /*
+   * The three washes painted behind everything (see `body::before`). A whole
+   * `background` shorthand rather than three colours, because a theme may want
+   * a different number of them, or none at all.
+   */
+  --app-wash:
+    radial-gradient(60rem 40rem at 12% -10%, rgb(180 160 255 / 0.16), transparent 70%),
+    radial-gradient(50rem 36rem at 105% 8%, rgb(150 220 255 / 0.14), transparent 70%),
+    radial-gradient(46rem 34rem at 70% 108%, rgb(255 195 205 / 0.13), transparent 70%);
+
+  /* Light themes get dark form controls and scrollbars from the platform, dark
+     themes the reverse. Set per theme so the browser's own widgets follow. */
+  --app-color-scheme: light;
 
   /*
    * Two curves, and they mean different things. `snap` is the workhorse —
@@ -127,144 +159,291 @@
   --text-3xl--line-height: 1.4;
 }
 
-html,
-body,
-#root {
-  height: 100%;
-}
+/*
+ * Gruvbox Dark.
+ *
+ * The retro-groove palette: warm dark browns rather than the blue-blacks most
+ * dark themes reach for, with the signature yellow carrying the accent. Its
+ * status colours are already loud enough to read on this background, so unlike
+ * Sherbet they are used unmodified.
+ */
+:root[data-theme='gruvbox-dark'] {
+  --color-bg: #282828;
+  --color-panel: #1f2223;
+  --color-elevated: #32302f;
+  --color-row-alt: #2e2d2b;
+  --color-scrim: rgb(15 14 12 / 0.55);
 
-/* The root size is the single knob that scales the interface. Settings
-   writes it inline on <html>; this is the fallback before that loads. */
-html {
-  font-size: 16px;
-}
+  --color-border: #3c3836;
+  --color-border-strong: #504945;
 
-body {
-  margin: 0;
-  background: var(--color-bg);
-  color: var(--color-text);
-  font-family: var(--font-sans);
-  /* Everything inherits this. No component sets its own size — see @theme. */
-  font-size: 1rem;
-  line-height: 1.4;
-  /* The webview is a fixed app frame, not a document — page-level scrolling
-     would detach the header from the grid. */
-  overflow: hidden;
-  -webkit-font-smoothing: antialiased;
+  --color-text: #ebdbb2;
+  --color-muted: #bdae93;
+  --color-faint: #928374;
+
+  --color-accent: #fabd2f;
+  /* Dark themes invert what "dim" means: a bright yellow behind ::selection
+     would swallow the cream text, so this is a yellow-cast background tone. */
+  --color-accent-dim: #574a2b;
+  --color-on-accent: #282828;
+  --color-accent-rgb: 250 189 47;
+
+  --color-danger: #fb4934;
+  --color-success: #b8bb26;
+  --color-warn: #fe8019;
+
+  --color-mint: #8ec07c;
+  --color-sky: #83a598;
+  --color-lilac: #d3869b;
+  --color-blush: #e07b8f;
+  --color-peach: #fe8019;
+  --color-lemon: #fabd2f;
+
+  /* Near-black. A tinted shadow on a dark surface reads as fog, not depth. */
+  --color-shadow: 0 0 0;
+  --app-wash:
+    radial-gradient(60rem 40rem at 12% -10%, rgb(250 189 47 / 0.05), transparent 70%),
+    radial-gradient(50rem 36rem at 105% 8%, rgb(131 165 152 / 0.05), transparent 70%);
+  --app-color-scheme: dark;
 }
 
 /*
- * Three pastel washes behind everything, fixed so they never scroll with the
- * grid. They are deliberately weak: this sits underneath data, and a gradient
- * you can consciously see is a gradient that is fighting the rows. Painted on
- * a pseudo-element so no stacking context is created for the app itself.
+ * Gruvbox Light. The same hues over its cream paper — the light mode for
+ * people who want the palette but not a dark room.
  */
-body::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  background:
-    radial-gradient(60rem 40rem at 12% -10%, rgba(180, 160, 255, 0.16), transparent 70%),
-    radial-gradient(50rem 36rem at 105% 8%, rgba(150, 220, 255, 0.14), transparent 70%),
-    radial-gradient(46rem 34rem at 70% 108%, rgba(255, 195, 205, 0.13), transparent 70%);
-}
+:root[data-theme='gruvbox-light'] {
+  --color-bg: #fbf1c7;
+  --color-panel: #f2e5bc;
+  --color-elevated: #f9f5d7;
+  --color-row-alt: #f4ead0;
+  --color-scrim: rgb(60 56 54 / 0.32);
 
-/* Text selection is meaningful in the grid and nowhere else; disabling it in
-   the chrome stops drag-selection from fighting with row clicks. */
-.chrome {
-  user-select: none;
-}
+  --color-border: #ebdbb2;
+  --color-border-strong: #d5c4a1;
 
-::selection {
-  background: var(--color-accent-dim);
-  color: var(--color-text);
-}
+  --color-text: #3c3836;
+  --color-muted: #665c54;
+  --color-faint: #928374;
 
-::-webkit-scrollbar {
-  width: 12px;
-  height: 12px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: var(--color-border-strong);
-  border-radius: 999px;
-  border: 3px solid transparent;
-  background-clip: content-box;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: var(--color-accent-dim);
-  background-clip: content-box;
-}
-::-webkit-scrollbar-corner {
-  background: transparent;
-}
+  /* The dark end of gruvbox's yellow, taken a shade further down than the
+     palette's own #b57614: that one lands at 3.3:1 on cream, both as text and
+     under the cream label of a filled button. This clears 4.5:1 on each. */
+  --color-accent: #96600e;
+  --color-accent-dim: #ecd9a4;
+  --color-on-accent: #fbf1c7;
+  --color-accent-rgb: 150 96 14;
 
-input,
-textarea,
-select,
-button {
-  font: inherit;
-  color: inherit;
-}
+  --color-danger: #9d0006;
+  --color-success: #79740e;
+  --color-warn: #af3a03;
 
-/* Checkboxes and radios are drawn by the platform; this is the one line that
-   stops them arriving in Windows blue on a lilac page. */
-input[type='checkbox'],
-input[type='radio'],
-input[type='range'],
-progress {
-  accent-color: var(--color-accent);
+  --color-mint: #689d6a;
+  --color-sky: #458588;
+  --color-lilac: #8f3f71;
+  --color-blush: #cc241d;
+  --color-peach: #d65d0e;
+  --color-lemon: #d79921;
+
+  --color-shadow: 124 111 100;
+  --app-wash:
+    radial-gradient(60rem 40rem at 12% -10%, rgb(215 153 33 / 0.1), transparent 70%),
+    radial-gradient(50rem 36rem at 105% 8%, rgb(104 157 106 / 0.08), transparent 70%);
+  --app-color-scheme: light;
 }
 
 /*
- * Motion, applied once here rather than as a `transition-colors` on four
- * hundred elements. Colour and shadow only — transform is left out on purpose,
- * because the grid positions thousands of virtualised rows with it and
- * animating that would smear every scroll.
+ * One Dark. Atom's palette — cool blue-grey surfaces, and the accent is its
+ * blue rather than a yellow, which makes selection read as a highlight instead
+ * of a warning.
  */
-button,
-a,
-input,
-select,
-textarea,
-summary,
-kbd,
-[role='menuitem'],
-[role='option'] {
-  transition:
-    background-color 130ms var(--ease-snap),
-    border-color 130ms var(--ease-snap),
-    color 130ms var(--ease-snap),
-    box-shadow 130ms var(--ease-snap),
-    opacity 130ms var(--ease-snap);
+:root[data-theme='one-dark'] {
+  --color-bg: #282c34;
+  --color-panel: #21252b;
+  --color-elevated: #2c313a;
+  --color-row-alt: #2f343d;
+  --color-scrim: rgb(12 14 18 / 0.55);
+
+  --color-border: #3a4049;
+  --color-border-strong: #4b5263;
+
+  --color-text: #c3cad6;
+  --color-muted: #9aa2af;
+  --color-faint: #6f7787;
+
+  --color-accent: #61afef;
+  --color-accent-dim: #33455c;
+  --color-on-accent: #282c34;
+  --color-accent-rgb: 97 175 239;
+
+  --color-danger: #e06c75;
+  --color-success: #98c379;
+  --color-warn: #e5c07b;
+
+  --color-mint: #56b6c2;
+  --color-sky: #61afef;
+  --color-lilac: #c678dd;
+  --color-blush: #e06c75;
+  --color-peach: #d19a66;
+  --color-lemon: #e5c07b;
+
+  --color-shadow: 0 0 0;
+  --app-wash:
+    radial-gradient(60rem 40rem at 12% -10%, rgb(97 175 239 / 0.06), transparent 70%),
+    radial-gradient(46rem 34rem at 70% 108%, rgb(198 120 221 / 0.05), transparent 70%);
+  --app-color-scheme: dark;
 }
 
 /*
- * The press. A button that does not move under the pointer feels like a
- * picture of a button; 40ms and 1.5% is enough to read as physical without
- * being a performance.
+ * Everything from here to the end of the block is `@layer base`, and that is
+ * load-bearing rather than tidiness. These rules used to sit unlayered *after*
+ * `@import 'tailwindcss'`, which put them later in the sheet than the utility
+ * classes at equal specificity — so they won every tie, and a component could
+ * not opt out of one. `focus-visible:outline-none` on the command palette's
+ * input was silently ignored for exactly that reason, and the ring it was
+ * trying to suppress got clipped by the panel's `overflow-hidden`. In the base
+ * layer these are defaults again and a utility overrides them.
  */
-button:not(:disabled):active {
-  transform: scale(0.985);
-  transition: transform 40ms var(--ease-snap);
-}
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
 
-/*
- * A visible focus ring matters more than usual here: the app is driven by the
- * keyboard, so where focus sits must never be ambiguous. The ring follows the
- * element's own radius, and controls get a soft halo behind it so focus is
- * legible even where the outline lands against a border of similar weight.
- */
-:focus-visible {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 0;
-}
-:is(button, input, select, textarea):focus-visible {
-  box-shadow: 0 0 0 4px rgba(122, 104, 232, 0.18);
+  /* The root size is the single knob that scales the interface. Settings
+     writes it inline on <html>; this is the fallback before that loads. */
+  html {
+    font-size: 16px;
+    /* Tells the platform which way its own widgets should lean — scrollbars,
+       date pickers, the caret. Set by the active theme. */
+    color-scheme: var(--app-color-scheme);
+  }
+
+  body {
+    margin: 0;
+    background: var(--color-bg);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    /* Everything inherits this. No component sets its own size — see @theme. */
+    font-size: 1rem;
+    line-height: 1.4;
+    /* The webview is a fixed app frame, not a document — page-level scrolling
+       would detach the header from the grid. */
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /*
+   * The washes behind everything, fixed so they never scroll with the grid.
+   * They are deliberately weak: this sits underneath data, and a gradient you
+   * can consciously see is a gradient that is fighting the rows. Painted on a
+   * pseudo-element so no stacking context is created for the app itself.
+   */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background: var(--app-wash);
+  }
+
+  /* Text selection is meaningful in the grid and nowhere else; disabling it in
+     the chrome stops drag-selection from fighting with row clicks. */
+  .chrome {
+    user-select: none;
+  }
+
+  ::selection {
+    background: var(--color-accent-dim);
+    color: var(--color-text);
+  }
+
+  ::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-border-strong);
+    border-radius: 999px;
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-accent-dim);
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  input,
+  textarea,
+  select,
+  button {
+    font: inherit;
+    color: inherit;
+  }
+
+  /* Checkboxes and radios are drawn by the platform; this is the one line that
+     stops them arriving in Windows blue on a lilac page. */
+  input[type='checkbox'],
+  input[type='radio'],
+  input[type='range'],
+  progress {
+    accent-color: var(--color-accent);
+  }
+
+  /*
+   * Motion, applied once here rather than as a `transition-colors` on four
+   * hundred elements. Colour and shadow only — transform is left out on
+   * purpose, because the grid positions thousands of virtualised rows with it
+   * and animating that would smear every scroll.
+   */
+  button,
+  a,
+  input,
+  select,
+  textarea,
+  summary,
+  kbd,
+  [role='menuitem'],
+  [role='option'] {
+    transition:
+      background-color 130ms var(--ease-snap),
+      border-color 130ms var(--ease-snap),
+      color 130ms var(--ease-snap),
+      box-shadow 130ms var(--ease-snap),
+      opacity 130ms var(--ease-snap);
+  }
+
+  /*
+   * The press. A button that does not move under the pointer feels like a
+   * picture of a button; 40ms and 1.5% is enough to read as physical without
+   * being a performance.
+   */
+  button:not(:disabled):active {
+    transform: scale(0.985);
+    transition: transform 40ms var(--ease-snap);
+  }
+
+  /*
+   * A visible focus ring matters more than usual here: the app is driven by
+   * the keyboard, so where focus sits must never be ambiguous. The ring
+   * follows the element's own radius, and controls get a soft halo behind it
+   * so focus is legible even where the outline lands against a border of
+   * similar weight.
+   */
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 0;
+  }
+  :is(button, input, select, textarea):focus-visible {
+    box-shadow: 0 0 0 4px rgb(var(--color-accent-rgb) / 0.18);
+  }
 }
 
 /* Indeterminate progress, used by the activity tray. A query's duration cannot

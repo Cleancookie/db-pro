@@ -215,6 +215,8 @@ export interface SaveConnectionRequest {
 }
 
 export interface Settings {
+  /** Palette id — see `themes.ts`. Mirrors `config.ThemeIDs` on the Go side. */
+  theme: string
   /** Root font size in px. The UI is sized in rem, so this scales all of it. */
   fontSizePx: number
   defaultPageSize: number

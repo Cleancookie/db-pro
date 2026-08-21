@@ -105,7 +105,7 @@ function Columns({ detail }: { detail: ObjectDetail }) {
               <td className={`${TD} font-medium font-semibold text-[var(--color-text)]`}>
                 {c.name}
                 {c.primaryKey && (
-                  <span className="ml-1 text-amber-500" title="Primary key">
+                  <span className="ml-1 text-[var(--color-warn)]" title="Primary key">
                     🔑
                   </span>
                 )}
@@ -132,7 +132,7 @@ export function TableDetailsPage() {
   const setView = useStore((s) => s.setView)
 
   if (loading) return <div className="p-4 text-[var(--color-faint)]">Describing…</div>
-  if (error) return <div className="p-4 text-red-400">{error}</div>
+  if (error) return <div className="p-4 text-[var(--color-danger)]">{error}</div>
   if (!detail) return <div className="p-4 text-[var(--color-faint)]">Nothing to describe.</div>
 
   const u = detail.unavailable ?? {}
@@ -195,7 +195,7 @@ export function TableDetailsPage() {
                 <tr key={ix.name} className="border-b border-[var(--color-border)]">
                   <td className={`${TD} font-semibold text-[var(--color-text)]`}>
                     {ix.name}
-                    {ix.primary && <span className="ml-1 text-amber-500">(primary)</span>}
+                    {ix.primary && <span className="ml-1 text-[var(--color-warn)]">(primary)</span>}
                   </td>
                   <td className={`${TD} text-[var(--color-text)]`}>
                     {ix.columns.join(', ') || '(expression)'}

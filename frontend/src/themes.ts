@@ -1,0 +1,70 @@
+/**
+ * The themes on offer.
+ *
+ * This is a list of names, not of colours — every colour lives in `index.css`
+ * as a `:root[data-theme='…']` block, and the id here is that attribute value.
+ * The two are kept in step by hand; `config.ThemeIDs` on the Go side is the
+ * third copy, and exists so a hand-edited settings file cannot leave the app
+ * with no palette at all.
+ *
+ * `swatch` is the pair the settings dialog shows next to each name: the page
+ * background and the accent, which is enough to tell dark from light and warm
+ * from cool without rendering the whole interface twice.
+ */
+export interface Theme {
+  id: string
+  name: string
+  /** One line on the mood, shown under the name. */
+  note: string
+  swatch: { bg: string; accent: string }
+}
+
+export const THEMES: Theme[] = [
+  {
+    id: 'sherbet',
+    name: 'Sherbet',
+    note: 'Warm paper and pastels',
+    swatch: { bg: '#fbfaff', accent: '#7a68e8' },
+  },
+  {
+    id: 'gruvbox-dark',
+    name: 'Gruvbox Dark',
+    note: 'Retro groove, warm and dim',
+    swatch: { bg: '#282828', accent: '#fabd2f' },
+  },
+  {
+    id: 'gruvbox-light',
+    name: 'Gruvbox Light',
+    note: 'The same hues on cream',
+    swatch: { bg: '#fbf1c7', accent: '#96600e' },
+  },
+  {
+    id: 'one-dark',
+    name: 'One Dark',
+    note: 'Cool blue-grey, editor classic',
+    swatch: { bg: '#282c34', accent: '#61afef' },
+  },
+]
+
+export const DEFAULT_THEME = 'sherbet'
+
+export function themeName(id: string): string {
+  return THEMES.find((t) => t.id === id)?.name ?? id
+}
+
+/**
+ * Applies a theme by writing the attribute the CSS keys off.
+ *
+ * Sherbet is the bare `:root` block, so it is expressed as *no* attribute
+ * rather than as `data-theme="sherbet"`. That way an unstyled first paint —
+ * before any settings have loaded — is already the default theme rather than
+ * an unthemed one.
+ */
+export function applyTheme(id: string) {
+  const root = document.documentElement
+  if (id === DEFAULT_THEME || !THEMES.some((t) => t.id === id)) {
+    root.removeAttribute('data-theme')
+  } else {
+    root.setAttribute('data-theme', id)
+  }
+}

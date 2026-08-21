@@ -311,6 +311,9 @@ test — which is the intended speed bump.
 | The query history is a fixed ring with capped retained SQL | It grows for the whole session otherwise, and holds statement text |
 | Query timers extrapolate from the last snapshot, never from `startedAt` | `startedAt` is the server's wall clock; clock skew would show a fresh query as minutes old |
 | The UI is sized in `rem` from a single root font size | The Settings slider must scale spacing and controls, not just text |
+| No component names a colour literal; every one is a `var(--color-…)` token | A theme is then a block of custom properties in `index.css` and nothing else. One literal is a component that stays light in a dark theme |
+| Base styles in `index.css` live inside `@layer base` | Unlayered, they sort after Tailwind's utilities at equal specificity and win every tie, so a component cannot opt out of one. That is how `focus-visible:outline-none` on the palette input was silently ignored |
+| `config.ThemeIDs`, the `:root[data-theme]` blocks and `themes.ts` list the same ids | Three hand-kept copies. A theme missing from the Go list is rejected on load and the user's choice silently reverts |
 | `frontend/dist/.gitkeep` stays tracked, and builds must not delete it | `main.go` embeds `frontend/dist`; without it a fresh clone will not compile |
 | A context-menu item fires a store action the palette also exposes | The palette is the primary surface. A menu that calls the API directly is a second code path where the confirmation and the refresh afterwards can drift |
 | Truncate and drop are decided in the store action, never at the call site | `runTruncate` / `runDrop` skip the confirmation by design; anything but a confirmation dialog calling them is a destructive statement with no prompt |

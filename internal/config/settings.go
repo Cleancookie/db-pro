@@ -4,11 +4,22 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 	"sync"
 )
 
+// ThemeIDs are the palettes the UI can render, and the only values Theme is
+// allowed to hold. Each one is a `:root[data-theme='…']` block in
+// frontend/src/index.css and an entry in frontend/src/themes.ts; this copy
+// exists so a hand-edited settings file cannot leave the app with no palette.
+// The first is the default.
+var ThemeIDs = []string{"sherbet", "gruvbox-dark", "gruvbox-light", "one-dark"}
+
 // Settings are the user's preferences, persisted alongside connections.
 type Settings struct {
+	// Theme names the palette, one of ThemeIDs. Purely a frontend concern —
+	// it is stored here only because this is where preferences live.
+	Theme string `json:"theme"`
 	// FontSizePx is the root font size. Every dimension in the UI is
 	// expressed in rem, so this scales the whole interface, not just text.
 	FontSizePx int `json:"fontSizePx"`
@@ -45,6 +56,7 @@ type Settings struct {
 // DefaultSettings is also the fallback for any field missing from disk.
 func DefaultSettings() Settings {
 	return Settings{
+		Theme:             ThemeIDs[0],
 		FontSizePx:        16,
 		DefaultPageSize:   100,
 		PaginationEnabled: true,
@@ -65,6 +77,9 @@ func DefaultSettings() Settings {
 // size of zero would return nothing.
 func (s Settings) clamp() Settings {
 	d := DefaultSettings()
+	if !slices.Contains(ThemeIDs, s.Theme) {
+		s.Theme = d.Theme
+	}
 	if s.FontSizePx < 10 || s.FontSizePx > 28 {
 		s.FontSizePx = d.FontSizePx
 	}
